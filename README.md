@@ -1,2 +1,3 @@
 # 16281047_OperatingSystemExperiment
-lab1 是实验一的实验报告和实验代码
+[实验一实验报告](./lab1/16281047_lab1_report.md)
+
