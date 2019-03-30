@@ -14,7 +14,7 @@ void *worker1(void *arg)
 	{
 		sem_wait(empty);
 		/* fflush(stdin); */
-		/* printf("输入："); */
+		printf("输入：");
 		scanf("%c",&buf[i]);
 		sem_post(full);
 		if(i==9)
