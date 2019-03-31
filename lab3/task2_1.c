@@ -14,13 +14,13 @@ void *SaleThread(void *arg)
 	{
 		if(i % 10 ==0)
 			printf("卖%d张票,剩余%d张票\n",i,ticketCount);
-		/* temp=ticketCount; */
+		temp=ticketCount;
 		//放弃CPU，强制切换到另外一个进程
-		/* pthread_yield(); */
-		/* temp=temp-1; */
+		pthread_yield();
+		temp=temp-1;
 		ticketCount-=1;
 		pthread_yield();
-		/* ticketCount=temp; */
+		ticketCount=temp;
 	}
 	return NULL;
 }
@@ -33,12 +33,12 @@ void *RefundThread(void *arg)
 	{
 		if(i % 10 ==0)
 			printf("退%d张票，剩余%d张票\n",i,ticketCount);
-		/* temp=ticketCount; */
-		/* pthread_yield(); */
-		/* temp=temp+1; */
+		temp=ticketCount;
+		pthread_yield();
+		temp=temp+1;
 		ticketCount+=1;
 		pthread_yield();
-		/* ticketCount=temp; */
+		ticketCount=temp;
 	}
 	return NULL;
 }
