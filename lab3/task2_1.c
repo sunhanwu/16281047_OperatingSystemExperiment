@@ -23,6 +23,7 @@ void *SaleThread(void *arg)
 		ticketCount-=1;
 		pthread_yield();
 		ticketCount=temp;
+		/* pthread_yield(); */
 		/* sem_post(flag); */
 	}
 	return NULL;
