@@ -235,7 +235,7 @@ $\qquad$火车票余票数ticketCount 初始值为1000，有一个售票线程�
    gcc -g  task2_1.c -o task2_1 -lpthread
    ```
 
-   多次测试运行，运行结果可以分为两种两类，一种是售票数量比退票数量多，另一种是售票数量比退票数量少。两种情况的结果分别如下：
+   多次测试运行，运行结果可以分为两种类型，一种是售票数量比退票数量多，另一种是售票数量比退票数量少。两种情况的结果分别如下：
 
    + 售票数量比退票数量多：
 
@@ -264,4 +264,134 @@ $\qquad$火车票余票数ticketCount 初始值为1000，有一个售票线程�
 
    `task2_2.c`
 
+   ```c
+   #include<stdio.h>
+   #include<stdlib.h>
+   #include<pthread.h>
+   #include<semaphore.h>
+   #include<sys/stat.h>
+   #include<fcntl.h>
+   #include<string.h>
+   volatile int ticketCount=1000;
+   sem_t *flag=NULL;
+   void *SaleThread(void *arg)
+   {
+   	int num,temp;
+   	num=atoi(arg);
+   	for(int i=0;i<num;i++)
+   	{
+   		if(i % 10 ==0)
+   			printf("卖%d张票,剩余%d张票\n",i,ticketCount);
+   		sem_wait(flag);
+   		temp=ticketCount;
+   		//放弃CPU，强制切换到另外一个进程
+   		pthread_yield();
+   		temp=temp-1;
+   		ticketCount-=1;
+   		pthread_yield();
+   		ticketCount=temp;
+   		sem_post(flag);
+   	}
+   	return NULL;
+   }
    
+   void *RefundThread(void *arg)
+   {
+   	int num,temp;
+   	num=atoi(arg);
+   	for(int i=0;i<num;i++)
+   	{
+   		if(i % 10 ==0)
+   			printf("退%d张票，剩余%d张票\n",i,ticketCount);
+   		sem_wait(flag);
+   		temp=ticketCount;
+   		pthread_yield();
+   		temp=temp+1;
+   		ticketCount+=1;
+   		pthread_yield();
+   		ticketCount=temp;
+   		sem_post(flag);
+   	}
+   	return NULL;
+   }
+   int main(int argc,char *argv[])
+   {
+   	if(argc!=3)
+   	{
+   		printf("请正确输入参数！\n");
+   		exit(0);
+   	}
+   	flag=sem_open("flag",O_CREAT,0666,1);
+   	printf("初始票数为：%d\n",ticketCount);
+   	pthread_t p1,p2;
+   	printf("%s %s",argv[1],argv[2]);
+   	pthread_create(&p1,NULL,SaleThread,argv[1]);
+   	pthread_create(&p2,NULL,RefundThread,argv[2]);
+   	pthread_join(p1,NULL);
+   	pthread_join(p2,NULL);
+   	printf("最终票数为：%d\n",ticketCount);
+   	sem_close(flag);
+   	sem_unlink("flag");
+   	return 0;
+   
+   }
+   ```
+
+2. 程序解释
+
+   + task2_2.c在task2_1.c的基础上增加了同步机制，其他部分完全一致，通过信号量flag的控制，让售票线程和退票线程一次只能执行一个，在一个没有执行完成之前另一个不能进入执行，这样就保证了售票操作和退票操作的原子性，避免了脏数据的读取。
+
+   + flag初始值为设置为1，表示每次只允许一个线程操作ticketCount这个数据
+
+   + 售票线程和退票线程在进入操作之前都要sem_wait(flag)，等待信号量，在完成操作之后要sem_post(flag)，下图是售票线程中增加了信号量的操作：
+
+     <img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1md41scu2j30qi06z3za.jpg" width="600">
+
+3. 程序运行结果
+
+   编译上述程序，得到可执行程序task2_2
+
+   ```shell
+   gcc task2_2.c -o task2_2 -lpthread
+   ```
+
+   多次测试运行，测试主要分为两种类型，一种是售票数量比退票数量多，另一种是售票数量比退票数量少。两种情况的结果分别如下：
+
+   + 售票数量比退票数量多：
+
+     初始票数：1000  	售票：100 	退票：40
+
+     <img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1md9o8sw0j30q50dowh5.jpg" width="600">
+
+   + 退票数量比售票数量多：
+
+     初始票数：1000	售票：50	退票：80
+
+     <img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1mdaxj1kyj30q40cu40y.jpg" width="600">
+
+4. 实验现象归纳
+
+   - 在第一个测试样例中，初始票数为1000，售票100并且退票40，最终总票数为940，结果正确；
+
+   - 在第二个测试样例中，初始票数为1000，售票50并且退票80，最终总票数为1030，结果正确。
+
+   + 通过上面的测试结果可以看出，不论是售票数量比退票数量多还是少，都不会发生类似前面2.2.1的问题，最终的票数是期待得到的结果。
+
+   + 上面的实验证实了增加了同步机制之后的多线程并发程序有效的解决了脏数据的读取问题
+
+### 2.3 实验结果
+
+$\qquad​$ 通过2.2节的对比实验可以看出，在执行多进程并发程序的时候，由于多进程的切换可能发生在某个进程的中间，会导致在一个进程处理的数据未写入ticketCount之前另外一个进程读取该数据，这样就导致了脏数据的读取，导致最终结果的不正确。
+
+$\qquad$在2.2节的后半部分通过怎加同步机制，保证售票进程和退票进程的的原子性，就是指在某个进程操作的时候，在它完成操作之前另外一个进程无法操作共享变量ticketCount,这样就避免了脏数据的发生。
+
+### 2.4 现象解释
+
+#### 2.4.1 现象解释1
+
+$\qquad​$在2.2.1节的实验中，
+
+<img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1mg7l5m5jj30hu0ast9k.jpg" width="600">
+
+<img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1mg5o8rzxj30ht0am0tk.jpg" width="600">
+
