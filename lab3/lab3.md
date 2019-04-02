@@ -389,9 +389,98 @@ $\qquad$在2.2节的后半部分通过怎加同步机制，保证售票进程和
 
 #### 2.4.1 现象解释1
 
-$\qquad​$在2.2.1节的实验中，
+$\qquad$在2.2.1节的实验中，以售票线程为例（代码如下图所示），没有添加同步机制，并且在进行`temp=temp-1`和`temp=ticketCount`的后面均加上了pthread_yield，这个函数的作用是放弃对CPU的使用权，切换到其他进程中，本实验中就是切换到退票进程中。
+
+$\qquad$这样就能解释为什么2.2.1节中的实验现象，在2.2.1节中，不论售票数多还是退票数多，最终结果都是总票数加上或减去值比较大的那个数。通过分析可以得出解释，售票进程和退票进程同时进行，初始票数均为1000，售票进程完成一次是票数为999，售票进程开始下一次售票，但是在运行`temp=ticketCount`之前，退票进程处理的数据还没有写入到内存中，导致售票进程读取的还是自己之前计算的ticketCount值，而不是全局的值。退票进程也是同理。
+
+$\qquad$但是为什么刚好就是总票数加上或减去值比较大的那个呢？按照道理来说因该售票进程执行temp=ticketCount在退票进程写入ticketCount值之前发生是存在一定概率的，但是在目前为止的所有测试结果全部都是在写入之前读取ticketCount值，对此的解释是由于ticketCount=temp和temp=ticketCount之间没有加pthread_yield操作，而现代的处理器运算速度足够快，在退票进程放弃CPU控制权的那个时间片已经完成了这两步操作，所以相当于售票进程读取的ticketCount一直是自己本身的值，退票进程处理的数据对售票进程并没有影响。
 
 <img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1mg7l5m5jj30hu0ast9k.jpg" width="600">
 
+$\qquad$为了验证上面的猜想，在=如下图所示代码，在ticketCount之后增加一行代码，pthread_yield，放弃当前进程对CPU的控制权，即售票进程放弃对CPU的控制权转而交给退票进程，这个时候退票进程处理的数据就能写入到内存中，而当售票进程再次处理temp=ticketCount的时候，读取的就是退票进程已经写入的数据。如果猜想正确的话，期待的最终票数因该还会发生错误，但并不是像第一中那种恰好等于总票数加减数值大的那个数。
+
 <img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1mg5o8rzxj30ht0am0tk.jpg" width="600">
 
+得到的结果如下，发现最终的票数不在是1000+50=1050，而是分布在1000~1050之间的数值。猜想得到验证。
+
+<img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1mx3kkmlxj30hh05ndg8.jpg" width="600">
+
+#### 2.4.2 现象解释2
+
+在2.2.2节中，当给售票进程和退票进程都加上同步机制后，保证了每个线程操作的原子性，每个线程操作的过程中其他的线程不能对共享的ticketCount变量进程修改，这样的话最终的结果就是正确的结果。
+
+## Task 3
+
+### 3.1 实验要求
+
+$\qquad​$一个生产者一个消费者线程同步。设置一个线程共享的缓冲区， char buf[10]。一个线程不断从键盘输入字符到buf,一个线程不断的把buf的内容输出到显示器。要求输出的和输入的字符和顺序完全一致。（在输出线程中，每次输出睡眠一秒钟，然后以不同的速度输入测试输出是否正确）。要求多次测试添加同步机制前后的实验效果。
+
+### 3.2 实验过程
+
+1. 实验源码
+
+   task3.c
+
+   ```c
+   #include<stdio.h>
+   #include<stdlib.h>
+   #include<pthread.h>
+   #include<semaphore.h>
+   #include<sys/stat.h>
+   #include<fcntl.h>
+   char buf[10];
+   sem_t *empty=NULL;
+   sem_t *full=NULL;
+   void *worker1(void *arg)
+   {
+   	
+   	for(int i=0;i<10;i++)
+   	{
+   		sem_wait(empty);
+   		/* fflush(stdin); */
+   		/* printf("输入："); */
+   		scanf("%c",&buf[i]);
+   		sem_post(full);
+   		if(i==9)
+   		{
+   			i=-1;
+   		}
+   	}	
+   	return NULL;
+   }
+   void *worker2(void *arg)
+   {
+   	for(int i=0;i<10;i++)
+   	{
+   		sem_wait(full);
+   		printf("输出：%c\n",buf[i]);
+   		sem_post(empty);
+   		sleep(1);
+   		if(i==9)
+   		{
+   			i=-1;		
+   		}
+   	}	
+   	return NULL;
+   }
+   
+   int main(int argc,char *argv[])
+   {
+   	empty=sem_open("empty_",O_CREAT,0666,10);
+   	full=sem_open("full_",O_CREAT,0666,0);
+   	pthread_t p1,p2;
+   	pthread_create(&p1,NULL,worker1,NULL);
+   	pthread_create(&p2,NULL,worker2,NULL);
+   	pthread_join(p1,NULL);
+   	pthread_join(p2,NULL);
+   	sem_close(empty);
+   	sem_close(full);
+   	sem_unlink("empty_");
+   	sem_unlink("full_");
+   	return 0;
+   }
+   ```
+
+2. 原理解释
+
+   work1是输入线程调用的函数，worker2是输出线程调用的函数。如果没有使用信号量实现共享缓冲区同步的话
