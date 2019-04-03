@@ -5,7 +5,7 @@
 #include<sys/stat.h>
 #include<fcntl.h>
 #include<string.h>
-volatile int ticketCount=1000;
+volatile int ticketCount=100000000;
 /* sem_t *flag=NULL; */
 void *SaleThread(void *arg)
 {
@@ -13,7 +13,7 @@ void *SaleThread(void *arg)
 	num=atoi(arg);
 	for(int i=0;i<num;i++)
 	{
-		if(i % 10 ==0)
+		if(i % 1000000 ==0)
 			printf("卖%d张票,剩余%d张票\n",i,ticketCount);
 		/* sem_wait(flag); */
 		temp=ticketCount;
@@ -35,7 +35,7 @@ void *RefundThread(void *arg)
 	num=atoi(arg);
 	for(int i=0;i<num;i++)
 	{
-		if(i % 10 ==0)
+		if(i % 1000000 ==0)
 			printf("退%d张票，剩余%d张票\n",i,ticketCount);
 		/* sem_wait(flag); */
 		temp=ticketCount;
@@ -44,7 +44,7 @@ void *RefundThread(void *arg)
 		ticketCount+=1;
 		pthread_yield();
 		ticketCount=temp;
-		pthread_yield();
+		/* pthread_yield(); */
 		/* sem_post(flag); */
 	}
 	return NULL;
