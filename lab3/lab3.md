@@ -2,9 +2,9 @@
 
 
 
-实验三 实验报告
+# <center>实验三 实验报告</center>
 
-> 孙汉武	安全1601	16281047
+> <center>孙汉武	安全1601	16281047</center>
 
 [TOC]
 
@@ -18,7 +18,7 @@ $\qquad$通过fork的方式，产生4个进程P1,P2,P3,P4，每个进程打印�
 
 1. 实验源码
 
-   `Task1.c`
+   `Task1.c` 
 
    ```c++
    #include<stdio.h>
@@ -95,7 +95,9 @@ $\qquad$通过fork的方式，产生4个进程P1,P2,P3,P4，每个进程打印�
 
    + 前趋图
 
-     <img src="https://ws1.sinaimg.cn/large/006tKfTcly1g1jizdjii3j30xm0gcq3w.jpg" width="600">
+     <div align="center"><img src="https://ws1.sinaimg.cn/large/006tKfTcly1g1jizdjii3j30xm0gcq3w.jpg" width="600" /></div>
+
+     
 
      
 
@@ -113,7 +115,7 @@ $\qquad$通过fork的方式，产生4个进程P1,P2,P3,P4，每个进程打印�
 
      P1进程执行完打印任务之后对P1_signal信号量进行V操作，产生一个资源让等待P1_signal的进程P2和P3其中之一可以执行。由于P2和P3都是等待P1_signal信号量，但是P1进程只产生一个单位的信号，所以P2和P3的执行是互斥的，这样就满足了题目要求。最后在P2和P3执行完打印任务后对信号量P2_signal和P3_signal进行V操作从各产生一个单位的信号量，而进程P4会等待P2_signal和P3_signal，所以知道当P2和P3进程都完成才能进行P4进程。通过控制这三个信号量，这四个进程之间的前驱关系就满足了题目要求。
 
-     <img src="https://ws1.sinaimg.cn/large/006tKfTcly1g1juc5uvifj30uk0ss778.jpg" width="400">
+     <div align="center"><img src="https://ws1.sinaimg.cn/large/006tKfTcly1g1juc5uvifj30uk0ss778.jpg" width="600" /></div>
 
    + 进程产生实现
 
@@ -121,7 +123,7 @@ $\qquad$通过fork的方式，产生4个进程P1,P2,P3,P4，每个进程打印�
 
      下面的流程图仅表示进程间的关系，前驱关系的实现请看上一小节.
 
-     <img src="https://ws3.sinaimg.cn/large/006tKfTcly1g1jsiqayyyj30z60l0acn.jpg" width="600">
+     <div align="center"><img src="https://ws3.sinaimg.cn/large/006tKfTcly1g1jsiqayyyj30z60l0acn.jpg" width="600" /></div>
 
    
 
@@ -139,11 +141,11 @@ $\qquad​$通过上面的实验已经得到满足实验要求的可执行程序
 
 1. 顺序1：`P1-->P2-->P3-->P4`
 
-<img src="https://ws3.sinaimg.cn/large/006tKfTcly1g1jiscj3k3j30oc02jq40.jpg" width="600">
+   <div align="center"><img src="https://ws3.sinaimg.cn/large/006tKfTcly1g1jiscj3k3j30oc02jq40.jpg" width="600" /></div>
 
 2. 顺序2：`P1-->P3--P2-->P4`
 
-<img src="https://ws3.sinaimg.cn/large/006tKfTcly1g1jit8cce5j30lu02imy5.jpg" width="600">
+<div align="center"><img src="https://ws3.sinaimg.cn/large/006tKfTcly1g1jit8cce5j30lu02imy5.jpg" width="600" /></div>
 
 ### 1.4 现象解释
 
@@ -245,13 +247,15 @@ $\qquad$火车票余票数ticketCount 初始值为1000，有一个售票线程�
 
      初始票数：1000  	售票：100 	退票：40
 
-     <img src="https://ws3.sinaimg.cn/large/006tKfTcly1g1jzmct47hj30ze0h4n0i.jpg" width="600">
+     <div align="center"><img src="https://ws3.sinaimg.cn/large/006tKfTcly1g1jzmct47hj30ze0h4n0i.jpg" width="600" /></div>
+
+     
 
    + 售票数量比退票数量少：
 
      初始票数：1000	售票：50	退票：80
 
-     <img src="https://ws2.sinaimg.cn/large/006tKfTcly1g1jznrmxgxj30z60g2whl.jpg" width="600">
+     <div align="center"><img src="https://ws2.sinaimg.cn/large/006tKfTcly1g1jznrmxgxj30z60g2whl.jpg" width="600" /></div>
 
      
 
@@ -349,7 +353,7 @@ $\qquad$火车票余票数ticketCount 初始值为1000，有一个售票线程�
 
    + 售票线程和退票线程在进入操作之前都要sem_wait(flag)，等待信号量，在完成操作之后要sem_post(flag)，下图是售票线程中增加了信号量的操作：
 
-     <img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1md41scu2j30qi06z3za.jpg" width="600">
+     <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1md41scu2j30qi06z3za.jpg" width="600" /></div>
 
 3. 程序运行结果
 
@@ -365,13 +369,13 @@ $\qquad$火车票余票数ticketCount 初始值为1000，有一个售票线程�
 
      初始票数：1000  	售票：100 	退票：40
 
-     <img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1md9o8sw0j30q50dowh5.jpg" width="600">
+     <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1md9o8sw0j30q50dowh5.jpg" width="600" /></div>
 
    + 退票数量比售票数量多：
 
      初始票数：1000	售票：50	退票：80
 
-     <img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1mdaxj1kyj30q40cu40y.jpg" width="600">
+     <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1mdaxj1kyj30q40cu40y.jpg" width="600" /></div>
 
 4. 实验现象归纳
 
@@ -387,7 +391,7 @@ $\qquad$火车票余票数ticketCount 初始值为1000，有一个售票线程�
 
  通过2.2节的对比实验可以看出，在执行多进程并发程序的时候，由于多进程的切换可能发生在某个进程的中间，会导致在一个进程处理的数据未写入ticketCount之前另外一个进程读取该数据，这样就导致了脏数据的读取，导致最终结果的不正确。
 
-在2.2节的后半部分通过怎加同步机制，保证售票进程和退票进程的的原子性，就是指在某个进程操作的时候，在它完成操作之前另外一个进程无法操作共享变量ticketCount,这样就避免了脏数据的发生。
+在2.2节的后半部分通过怎加同步机制，保证售票进程和退票进程的的原子性，就是指在某个进程操作的时候，在它完成操作之前另外一个进程无法操作共享变量ticketCount,这样就避免了脏数据的发生，得到了预期的正确结果。
 
 ### 2.4 现象解释
 
@@ -399,15 +403,15 @@ $\qquad$火车票余票数ticketCount 初始值为1000，有一个售票线程�
 
 但是为什么刚好就是总票数加上或减去值比较大的那个呢？按照道理来说因该售票进程执行temp=ticketCount在退票进程写入ticketCount值之前发生是存在一定概率的，但是在目前为止的所有测试结果全部都是在写入之前读取ticketCount值，对此的解释是由于ticketCount=temp和temp=ticketCount之间没有加pthread_yield操作，而现代的处理器运算速度足够快，在退票进程放弃CPU控制权的那个时间片已经完成了这两步操作，所以相当于售票进程读取的ticketCount一直是自己本身的值，退票进程处理的数据对售票进程并没有影响。
 
-<img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1mg7l5m5jj30hu0ast9k.jpg" width="600">
+<div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1mg7l5m5jj30hu0ast9k.jpg" width="600" /></div>
 
 为了验证上面的猜想，在=如下图所示代码，在ticketCount之后增加一行代码，pthread_yield，放弃当前进程对CPU的控制权，即售票进程放弃对CPU的控制权转而交给退票进程，这个时候退票进程处理的数据就能写入到内存中，而当售票进程再次处理temp=ticketCount的时候，读取的就是退票进程已经写入的数据。如果猜想正确的话，期待的最终票数因该还会发生错误，但并不是像第一中那种恰好等于总票数加减数值大的那个数。
 
-<img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1mg5o8rzxj30ht0am0tk.jpg" width="600">
+<div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1mg5o8rzxj30ht0am0tk.jpg" width="600" /></div>
 
 得到的结果如下，发现最终的票数不在是1000+50=1050，而是分布在1000~1050之间的数值。猜想得到验证。
 
-<img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1mx3kkmlxj30hh05ndg8.jpg" width="600">
+<div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1mx3kkmlxj30hh05ndg8.jpg" width="600" /></div>
 
 针对上面的猜想（CPU运算速度过快，导致ticketCount=temp和temp=ticketCount两步操作在一个进程的时间片内完成导致的数据错误），另外的一种验证方式是将初始票数和售票退票数设置的足够大，当数据足够大的时候，就会存在一定概率出现在一个进程的ticketCount=temp和temp=ticketCount两步操作之间切换进程的问题，得到的结果就不会类似2.2.1中的那样，而是类似在ticketCount=temp下面加了pthread_yield那样。
 
@@ -432,7 +436,7 @@ $\qquad​$一个生产者一个消费者线程同步。设置一个线程共享
 
 1. 实验源码
 
-   task3.c
+   `task3.c`
 
    ```c
    #include<stdio.h>
@@ -494,6 +498,44 @@ $\qquad​$一个生产者一个消费者线程同步。设置一个线程共享
    }
    ```
 
-2. 原理解释
+2. 程序解释
 
-   work1是输入线程调用的函数，worker2是输出线程调用的函数。如果没有使用信号量实现共享缓冲区同步的话
+   + work1是输入线程调用的函数，worker2是输出线程调用的函数。
+   + 设置两个信号量empty和ful来控制程序的执行，其中empty信号量用于保证输入线程在写入数据到缓存的时候缓存中还有空余的位置，保证写入线程后写入的数据不会把前面写入但是为输出的数据给覆盖掉，其初始值为10，表示最开始缓存中有10个空余的位置供给写入线程写入数据；full信号量是用于保证输出线程有数据输出，避免在写入线程还没有写入数据的情况下输出线程输出随机数据，其初始值为0，表示初始状态下缓存中没有数据可以输出
+   + 输入线程在写入一个数据前要等待empty信号量，进入后便消耗一个信号量；完成写入数据操作之后post一个full信号量，通知输出线程输出数据。
+   + 输出线程在输出一个数据之前哟啊等待full信号量，进出输出操作后便消耗一个full信号量；完成输出操作后post一个empty信号量，通知写入线程缓存又多一个空余位置以供写入数据。
+   + 输出线程每输出一个字符等待一秒钟，方便实验结果的查看。
+
+3. 编译源代码
+
+   ```shell
+   gcc task3.c -o task3 -lpthread
+   ```
+
+### 3.3 实验结果
+
+#### 3.3.1 实验运行现象
+
+1. 随机输入字母和数字（10个以内）：124365abc
+
+   <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1t6937h4hj31c80d2wg6.jpg" width="600" /></div>
+
+2. 随机输入字母和数字(10个以上)：123456789abcdefg
+
+<div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1t6andb8sj31ay0k60vf.jpg" width="600" /></div>
+
+3. 不间断输入：
+
+   <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1t6c6h7qjj31au0nujty.jpg" width="600" /></div>
+
+   通过观察上面的实验现象，可以看到已经满足了实验题目的要求。
+
+#### 3.3.2 实验现象解释
+
++ 在第一种类型的测试中，输入数据不大于10个字符的时候，由于empty的信号量初始值为10，所以输入进程会一直连续不断的向缓存中写入数据，每写入一个数据，便post一个full信号量，输出线程便能按序输出字符。
++ 在第二种类型的测试中，输入数据大于10个字符的时候，由于empty的初始值为10，所以输入的字符中开始的时候只有前10个字符被写入缓存中，其他的在I/O缓冲区等待输入，当输出线程接收到输入线程post的信号量的时候便会开始输出，每输出一个字符便会post一个empty信号量，当输入线程接收到empty信号量的时候有开始从I/O缓冲区读取数据写入到缓存中。
+
++ 第三种测试和第二种类似，在输出的过程中间输入数据，原理其实是一样的。
+
+## Task 4
+
