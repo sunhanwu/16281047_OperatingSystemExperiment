@@ -539,3 +539,425 @@ $\qquad​$一个生产者一个消费者线程同步。设置一个线程共享
 
 ## Task 4
 
+### 4.1 实验要求
+
+1. 通过实验测试，验证共享内存的代码中，receiver能否正确读出sender发送的字符串？如果把其中互斥的代码删除，观察实验结果有何不同？如果在发送和接收进程中打印输出共享内存地址，他们是否相同，为什么？
+
+2. 有名管道和无名管道通信系统调用是否已经实现了同步机制？通过实验验证，发送者和接收者如何同步的。比如，在什么情况下，发送者会阻塞，什么情况下，接收者会阻塞？
+3. 消息通信系统调用是否已经实现了同步机制？通过实验验证，发送者和接收者如何同步的。比如，在什么情况下，发送者会阻塞，什么情况下，接收者会阻塞？
+
+
+
+### 4.2 实验过程
+
+> 实验过程根据实验要求的三个部分，对应的过程也分为三个部分，具体如下所示
+
+#### 4.2.1 内存共享
+
+1. 实验源码
+
+   > 内存内存共享实验的源码分为两个部分，分别是Sender.c和Receive.c,
+
+   `Sender.c`：
+
+   ```c
+   /*
+    * Filename: Sender.c
+    * Description: 
+    */
+   
+   #include <stdio.h>
+   #include <stdlib.h>
+   #include <unistd.h>
+   #include <sys/sem.h>
+   #include <sys/ipc.h>
+   #include <sys/shm.h>
+   #include <sys/types.h>
+   #include <string.h>
+   
+   int main(int argc, char *argv[])
+   {
+       key_t  key;
+       int shm_id;
+       int sem_id;
+       int value = 0;
+       //1.Product the key
+       key = ftok(".", 0xFF);
+       //2. Creat semaphore for visit the shared memory
+       sem_id = semget(key, 1, IPC_CREAT|0644);
+       if(-1 == sem_id)
+       {
+           perror("semget");
+           exit(EXIT_FAILURE);
+       }
+       //3. init the semaphore, sem=0
+       if(-1 == (semctl(sem_id, 0, SETVAL, value)))
+       {
+           perror("semctl");
+           exit(EXIT_FAILURE);
+       }
+       //4. Creat the shared memory(1K bytes)
+       shm_id = shmget(key, 1024, IPC_CREAT|0644);
+       if(-1 == shm_id)
+       {
+           perror("shmget");
+           exit(EXIT_FAILURE);
+       }
+       //5. attach the shm_id to this process
+       char *shm_ptr;
+       shm_ptr = shmat(shm_id, NULL, 0);
+       if(NULL == shm_ptr)
+       {
+           perror("shmat");
+           exit(EXIT_FAILURE);
+       }
+       //6. Operation procedure
+       struct sembuf sem_b;
+       sem_b.sem_num = 0;      //first sem(index=0)
+       sem_b.sem_flg = SEM_UNDO;
+       sem_b.sem_op = 1;           //Increase 1,make sem=1
+       
+       while(1)
+       {
+           if(0 == (value = semctl(sem_id, 0, GETVAL)))
+           {
+               printf("\nNow, snd message process running:\n");
+               printf("\tInput the snd message:  ");
+               scanf("%s", shm_ptr);
+   
+               if(-1 == semop(sem_id, &sem_b, 1))
+               {
+                   perror("semop");
+                   exit(EXIT_FAILURE);
+               }
+           }
+           //if enter "end", then end the process
+           if(0 == (strcmp(shm_ptr ,"end")))
+           {
+               printf("\nExit sender process now!\n");
+               break;
+           }
+       }
+       shmdt(shm_ptr);
+       return 0;
+   }
+   
+   ```
+
+   `Receiver.c`
+
+   ```c
+   #include <stdio.h>
+   #include <stdlib.h>
+   #include <unistd.h>
+   #include <sys/sem.h>
+   #include <sys/ipc.h>
+   #include <sys/shm.h>
+   #include <sys/types.h>
+   #include <string.h>
+   
+   int main(int argc, char *argv[])
+   {
+       key_t  key;
+       int shm_id;
+       int sem_id;
+       int value = 0;
+       //1.Product the key
+       key = ftok(".", 0xFF);
+       //2. Creat semaphore for visit the shared memory
+       sem_id = semget(key, 1, IPC_CREAT|0644);
+       if(-1 == sem_id)
+       {
+           perror("semget");
+           exit(EXIT_FAILURE);
+       }
+       //3. init the semaphore, sem=0
+       if(-1 == (semctl(sem_id, 0, SETVAL, value)))
+       {
+           perror("semctl");
+           exit(EXIT_FAILURE);
+       }
+       //4. Creat the shared memory(1K bytes)
+       shm_id = shmget(key, 1024, IPC_CREAT|0644);
+       if(-1 == shm_id)
+       {
+           perror("shmget");
+           exit(EXIT_FAILURE);
+       }
+       //5. attach the shm_id to this process
+       char *shm_ptr;
+       shm_ptr = shmat(shm_id, NULL, 0);
+       if(NULL == shm_ptr)
+       {
+           perror("shmat");
+           exit(EXIT_FAILURE);
+       }
+   
+       //6. Operation procedure
+       struct sembuf sem_b;
+       sem_b.sem_num = 0;      //first sem(index=0)
+       sem_b.sem_flg = SEM_UNDO;
+       sem_b.sem_op = -1;           //Increase 1,make sem=1
+       
+       while(1)
+       {
+           if(1 == (value = semctl(sem_id, 0, GETVAL)))
+           {
+               printf("\nNow, receive message process running:\n");
+               printf("\tThe message is : %s\n", shm_ptr);
+   
+               if(-1 == semop(sem_id, &sem_b, 1))
+               {
+                   perror("semop");
+                   exit(EXIT_FAILURE);
+               }
+           }
+           //if enter "end", then end the process
+           if(0 == (strcmp(shm_ptr ,"end")))
+           {
+               printf("\nExit the receiver process now!\n");
+               break;
+           }
+       }
+       shmdt(shm_ptr);
+       //7. delete the shared memory
+       if(-1 == shmctl(shm_id, IPC_RMID, NULL))
+       {
+           perror("shmctl");
+           exit(EXIT_FAILURE);
+       }
+       //8. delete the semaphore
+       if(-1 == semctl(sem_id, 0, IPC_RMID))
+       {
+           perror("semctl");
+           exit(EXIT_FAILURE);
+       }
+       return 0;
+   }
+   ```
+
+2. 程序解释
+
+   > 下面以sender.c为例解释一下如何创建共享内存并通过信号量机制实现互斥访问从而达到进程间通信的目的。
+
+   + 创建一个共享内存的ID,就是代码中的key
+
+     ```c
+      key_t  key;
+      key = ftok(".", 0xFF);
+     ```
+
+     >  通过ftok函数创建一个key_t类型的变量，作为共享内存的key，ftok函数的两个参数分别是文档名(一个存在的路径),上例中的路径是`.`表示当前路径，另一个参数是子序号
+
+   + 创建并初始化信号量
+
+     ```c
+     int sem_id;
+     sem_id = semget(key, 1, IPC_CREAT|0644);
+     if(-1 == sem_id)
+     {
+         perror("semget");
+         exit(EXIT_FAILURE);
+     }
+     if(-1 == (semctl(sem_id, 0, SETVAL, value)))
+     {
+         perror("semctl");
+         exit(EXIT_FAILURE);
+     }
+     ```
+
+     > 通过semget()函数创建一个信号量，初始值为1，再通过semctl()函数初始化该信号量
+
+   + 创建共享内存并挂载在进程中
+
+     ```c
+     //4. Creat the shared memory(1K bytes)
+     shm_id = shmget(key, 1024, IPC_CREAT|0644);
+     if(-1 == shm_id)
+     {
+         perror("shmget");
+         exit(EXIT_FAILURE);
+     }
+     //5. attach the shm_id to this process
+     char *shm_ptr;
+     shm_ptr = shmat(shm_id, NULL, 0);
+     if(NULL == shm_ptr)
+     {
+         perror("shmat");
+         exit(EXIT_FAILURE);
+     }
+     ```
+
+     > 在这部分代码中，首先通过shmget()函数创建了一个大小为1000B的共享内存，然后通过shmat函数，将刚刚创建的共享内存以可读写的方式挂载在进程上，并且指定系统将自动选择一个合适的地址给共享内存，将挂载的共享内存地址赋值给char型指针shm_ptr
+
+   + Sender主循环
+
+     ```c
+     while(1)
+     {
+         if(0 == (value = semctl(sem_id, 0, GETVAL)))
+         {
+             printf("\nNow, snd message process running:\n");
+             printf("\tInput the snd message:  ");
+             scanf("%s", shm_ptr);
+     
+             if(-1 == semop(sem_id, &sem_b, 1))
+             {
+                 perror("semop");
+                 exit(EXIT_FAILURE);
+             }
+         }
+         //if enter "end", then end the process
+         if(0 == (strcmp(shm_ptr ,"end")))
+         {
+             printf("\nExit sender process now!\n");
+             break;
+         }
+     }
+     ```
+
+     > 主循环中首先判断表示共享内存访问情况的信号量是否为0(为0表示共享内存空闲)，如果为0的话提示用户输入想要输入的消息，并将用户输入的消息写入共享内存中，写完后通过semop函数将信号量加一，通知receiver读取消息。并且定义一个`end`命令表示退出当前进程。循环退出的时候取消共享内存的挂载
+
+   + Receiver主循环
+
+     ```c
+     while(1)
+     {
+         if(1 == (value = semctl(sem_id, 0, GETVAL)))
+         {
+             printf("\nNow, receive message process running:\n");
+             printf("\tThe message is : %s\n", shm_ptr);
+     
+             if(-1 == semop(sem_id, &sem_b, 1))
+             {
+                 perror("semop");
+                 exit(EXIT_FAILURE);
+             }
+         }
+         //if enter "end", then end the process
+         if(0 == (strcmp(shm_ptr ,"end")))
+         {
+             printf("\nExit the receiver process now!\n");
+             break;
+         }
+     }
+     ```
+
+     > 主循环中首先判断表示共享内存访问情况的信号量是否为1(为1表示共享内存已经写入消息，可以读取)，如果为1的话输出该消息，输出后通过semop函数将信号量减1，通知Sender可以再次写入消息。并且定义一个`end`命令表示退出当前进程。循环退出的时候取消共享内存的挂载
+
+3. 实验现象
+
+   将上述源码编译后进行测试，得到下面的结果。
+
+   <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1t9bsd3s5j31uq0fa0xm.jpg" width="800" /></div>
+
+   > 可以看到sender进程发出的消息receiver进程均准确无误的收到
+
+4. 删除互斥访问相关的代码
+
+   程序主要的代码没有变化，只是在Sender和Receiver进程的主循环中将用于控制互斥访问共享内存的相关代码删除，注释后的结果如下：
+
+   `Sender_2.c:`
+
+   ```c
+   while(1)
+   {
+       printf("\nNow, snd message process running:\n");
+       printf("\tInput the snd message:  ");
+       scanf("%s", shm_ptr);
+       //if enter "end", then end the process
+       if(0 == (strcmp(shm_ptr ,"end")))
+       {
+           printf("\nExit sender process now!\n");
+           break;
+       }
+   }
+   ```
+
+   `Receiver_2.c:`
+
+   ```CQL
+   while(1)
+   {
+       printf("\nNow, receive message process running:\n");
+       printf("\tThe message is : %s\n", shm_ptr);
+   
+       //if enter "end", then end the process
+       if(0 == (strcmp(shm_ptr ,"end")))
+       {
+           printf("\nExit the receiver process now!\n");
+           break;
+       }
+       sleep(3);
+   }
+   ```
+
+   > 最后加一个sleep(1)用于控制打印的速度，便于观察现象
+
+5. 删除互斥访问后的实验现象
+
+   <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1t9sdljhhj31uq0n8799.jpg" width="800" /></div>
+
+   > 实验现象解释：当删除互斥访问之后，两个进程便没有限制的访问共享内存，Sender进程由于受限于用户输入的速度，会停留一直等待用户输入数据，但是Receiver进程会一直输出共享内存中的消息。
+
+6. 打印Sender和Receiver进程中共享内存的地址
+
+   在原始代码的基础上修改，具体代码文件分别是`Sender_3.c`和`Receiver_3.c`，具体修改就是如下：
+
+   <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1ta8ocwdvj30wy044t9i.jpg" width="600" /></div>
+
+   在挂载共享内存后打印挂载后的地址
+
+7. 打印共享内存地址实验现象
+
+   <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1ta7ecrb4j31uq0fe7b0.jpg" width="800" /></div>
+
+   > 可以看到实验现象，在两个进程中共享内存的地址不一样
+
+   ==**现象解释：**==
+
+   通过上面的现象可以看到共享内存在不同进程中是不相同的，总结有以下的原因导致共享内存在不同进程中的地址不一样：
+
+   + 进程在挂载内存的时候使用的`shmat()`函数中的第二个参数使用的是NULL，NULL参数的含义是进程让系统分配给共享内存合适的地址。在`shmat()`函数中，第二个参数有三种选择，分别是：
+
+   | 参数值 |             NULL             |                             addr                             |                             addr                             |
+   | :----: | :--------------------------: | :----------------------------------------------------------: | :----------------------------------------------------------: |
+   |  含义  | 系统将自动选择一个合适的地址 | 如果shmaddr非0 并且指定了SHM_RND 则此段连接到shmaddr -（shmaddr mod SHMLAB)所表示的地址上。 | 第三个参数如果在flag中指定了SHM_RDONLY位，则以只读方式连接此段，否则以读写的方式连接此 段。 |
+
+   ​	可以看到，当addr有具体的值的时候，便将共享内存挂载到指定的地址上
+
+   + 现代操作系统中都存在ASLR(地址空间随机化)，ASLR是⼀种针对缓冲区溢出的安全保护机制，具有ASLR机制的操作系统每次加载到内存的程序起始地址会随机变化。系统的这个随机化操作可能导致共享内存的地址不一致。
+
+   ==验证：==
+
+   1. 指定Sender_4.c和Receiver_4.c中共享内存的挂载地址为`0x7fcc2c0bb000`
+
+      + 修改具体的代码如下：
+
+        <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1taz7pfxdj30x408w404.jpg" width="600" /></div>
+
+      + 运行结果：
+
+        <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1tb56qlhmj31us0d0jx1.jpg" width="800" /></div>
+
+        > 实验结果结果佐证了上面的现象解释，通过指定挂载共享内存的地址，可以使共享内存的地址一致，可以随意指定改地址
+
+   2. 关闭系统的ASLR操作
+
+      + 具体的关闭命令如下：
+
+      ```
+      sudo su
+      sysctl -w kernel.randomize_va_space=0
+      ```
+
+      + 运行结果：
+
+        <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1tb3biwvpj31uw0cc794.jpg" width="800" /></div>
+
+        > 这个实验现象也佐证了系统的ASLR也对导致挂载的共享内存地址不一样
+
+#### 4.2.2 管道通信
+
+#### 4.2.3 消息队列
+
