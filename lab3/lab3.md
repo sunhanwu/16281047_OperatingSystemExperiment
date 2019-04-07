@@ -125,7 +125,9 @@ $\qquad$通过fork的方式，产生4个进程P1,P2,P3,P4，每个进程打印�
 
      <div align="center"><img src="https://ws3.sinaimg.cn/large/006tKfTcly1g1jsiqayyyj30z60l0acn.jpg" width="600" /></div>
 
-   
+   + 进程树
+
+     <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1u3ax2iraj30o20gywfa.jpg" width="400" ></div>
 
 3. 编译源码
 
@@ -137,7 +139,7 @@ $\qquad$通过fork的方式，产生4个进程P1,P2,P3,P4，每个进程打印�
 
 ### 1.3 实验结果
 
-$\qquad​$通过上面的实验已经得到满足实验要求的可执行程序task1,下面给出运行结果，经过多次测试，四个进程在屏幕上打印的顺序只有两种结果，分别如下：
+$\qquad$通过上面的实验已经得到满足实验要求的可执行程序task1,下面给出运行结果，经过多次测试，四个进程在屏幕上打印的顺序只有两种结果，分别如下：
 
 1. 顺序1：`P1-->P2-->P3-->P4`
 
@@ -928,7 +930,7 @@ $\qquad​$一个生产者一个消费者线程同步。设置一个线程共享
 
    + 现代操作系统中都存在ASLR(地址空间随机化)，ASLR是⼀种针对缓冲区溢出的安全保护机制，具有ASLR机制的操作系统每次加载到内存的程序起始地址会随机变化。系统的这个随机化操作可能导致共享内存的地址不一致。
 
-   ==验证：==
+   ==**验证：**==
 
    1. 指定Sender_4.c和Receiver_4.c中共享内存的挂载地址为`0x7fcc2c0bb000`
 
@@ -958,6 +960,303 @@ $\qquad​$一个生产者一个消费者线程同步。设置一个线程共享
         > 这个实验现象也佐证了系统的ASLR也对导致挂载的共享内存地址不一样
 
 #### 4.2.2 管道通信
+
+##### （1）无名管道
+
+1. 实验源码
+
+   `pipe.c:`
+
+   ```c
+   #include <stdio.h>
+   #include <unistd.h>     //for pipe()
+   #include <string.h>     //for memset()
+   #include <stdlib.h>     //for exit()
+   int main()
+   {
+       int fd[2];
+       char buf[20];
+       if(-1 == pipe(fd))
+       {
+           perror("pipe");
+           exit(EXIT_FAILURE);
+       }
+       write(fd[1], "hello,world", 12);
+       memset(buf, '\0', sizeof(buf));
+       read(fd[0], buf, 12);
+       printf("The message is: %s\n", buf);
+       return 0;
+   }
+   ```
+
+2. 程序解释
+
+   + 通过pipe函数创建管道，函数传递一个整形数组fd，fd的两个整形数表示的是两个文件描述符，其中第一个用于读取数据，第二个用于写数据。两个描述符相当远管道的两端，一段负责写数据，一段负责读数据。
+   + pipe管道是半双工的工作模式，某一时刻只能读或者只能写
+   + 读写管道就和读写普通文件一样，使用write和read
+
+3. 实验现象
+
+   <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1tw0wq5j8j30xq0323zh.jpg" width="600" ></div>
+
+4. 无名管道同步机制验证
+
+   > 为了验证无名管道的同步机制，在上述代码的基础上进行修改，得到如下的代码
+
+   `pipe_2.c:`
+
+   ```c
+   #include <stdio.h>
+   #include <unistd.h>     //for pipe()
+   #include <string.h>     //for memset()
+   #include <stdlib.h>     //for exit()
+   int main()
+   {
+       int fd[2];
+       char buf[200]={0};
+   	pid_t child;
+       //创建管道
+   	if(-1 == pipe(fd))
+       {
+           perror("pipe");
+           exit(EXIT_FAILURE);
+       }
+   	//创建子进程
+   	child=fork();
+   	if(child==-1)
+   	{
+   		perror("fork");
+   		exit("EXIT_FAILURE");
+   	}
+   	if(child==0)
+   	{
+   		//关闭子进程中不需要的写描述符
+   		close(fd[1]);
+   		while(1)
+   		{
+   			if(read(fd[0],buf,sizeof(buf))>0)
+   					printf("子进程接收的消息是:%s\n",buf);
+   			else
+   					printf("子进程:管道中没有数据\n");
+   			sleep(2);		
+   			if(strcmp(buf,"end")==0)
+   					break;
+   			memset(buf,0,sizeof(buf));
+   		}
+   	}
+   	if(child>0)
+   	{
+   		close(fd[0]);
+   		while(1)
+   		{
+   			printf("父进程中-请输入消息:");
+   			scanf("%s",buf);
+   			write(fd[1],buf,strlen(buf));
+   			if(strcmp(buf,"end")==0)
+   				break;
+   		}	
+   	}
+       return 0;
+   }
+   ```
+
+   > 对于上述代码做出如下解释：父进程是消息的发送者，在父进程中创建了两个文件描述符，fork一个子进程的时候会复制这两个管道文件描述符，因此父进程和子进程都会将自己的那个用不到的文件描述符关闭。父进程中会持续向管道中写入用户输入的消息，子进程会一直输出管道中的消息，如果管道中没有消息就会阻塞等待。
+
+5. 无名管道同步机制实验现象
+
+   <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1u1cu3kutj30xm0ny44z.jpg" width="600" ></div>
+
+   > 可以看到输出进程是按照输入进程输入的顺序输出数据，并且当输入进程没有数据输入，即管道中没有数据的时候，输出进程会阻塞。因此无名管道通信系统调用的时候已经yijing实现了同步机制
+
+6. 无名管道同步机制原理
+
+   通过上面的实验和查阅相关资料，得到无名管道如下的同步机制：
+
+   + 管道的读写通过两个系统调用write和read实现
+
+   + 发送者在向管道内存中写入数据之前，首先**检查内存是否被读进程锁定**和**内存中是否还有剩余空间**，如果这两个要求都满足的话write函数会对内存上锁，然后进行写入数据，写完之后解锁；否则就会等待(阻塞)。
+   + 写进程在读取管道中的数据之前，也会**检查内存是否被读进程锁定**和**管道内存中是否有数据**，如果满足这两个条件，read函数会对内存上锁，读取数据后在解锁；否则会等到(阻塞)
+
+##### （2）有名管道
+
+1. 实验代码
+
+   > 有名管道实验中设计两个代码文件`fifo_send.c`和`fifo_rcv.c`
+
+   `fifo_send.c:`
+
+   ```c
+   #include <stdio.h>
+   #include <stdlib.h>
+   #include <unistd.h>
+   #include <sys/stat.h>
+   #include <sys/ipc.h>
+   #include <fcntl.h>
+   #define FIFO "./my_fifo"
+   
+   int main()
+   {
+       char buf[] = "hello,world";
+       //1. check the fifo file existed or not
+       int ret;
+       ret = access(FIFO, F_OK);
+       if(ret != 0)    //file /tmp/my_fifo existed
+       {
+       	if(-1 == mkfifo(FIFO, 0766))
+       	{
+       	    perror("mkfifo");
+       	    exit(EXIT_FAILURE);
+       	}
+       }
+   
+       //3.Open the fifo file
+       int fifo_fd;
+       fifo_fd = open(FIFO, O_WRONLY);
+       if(-1 == fifo_fd)
+       {
+           perror("open");
+           exit(EXIT_FAILURE);
+   
+       }
+       //4. write the fifo file
+       int num = 0;
+       num = write(fifo_fd, buf, sizeof(buf));
+       if(num < sizeof(buf))
+       {
+           perror("write");
+           exit(EXIT_FAILURE);
+       }
+       printf("write the message ok!\n");
+   
+       close(fifo_fd);
+   
+       return 0;
+   }
+   ```
+
+   `fifo_rcv.c:`
+
+   ```c
+   /*
+    *File: fifo_rcv.c
+    */
+    
+   #include <stdio.h>
+   #include <string.h>
+   #include <stdlib.h>
+   #include <unistd.h>
+   #include <sys/stat.h>
+   #include <sys/ipc.h>
+   #include <fcntl.h>
+   
+   
+   #define FIFO "./my_fifo"
+   
+   int main()
+   {
+       char buf[20] ;
+       memset(buf, '\0', sizeof(buf));
+   
+       //`. check the fifo file existed or not
+       int ret;
+       ret = access(FIFO, F_OK);
+       if(ret != 0)    //file /tmp/my_fifo existed
+       {
+           if(-1==mkfifo(FIFO,0766))
+           {
+               perror("mkfifo"); 
+               exit("EXIT_FAILURE");
+           }
+       }
+   
+   //	2.Open the fifo file
+       int fifo_fd;
+       fifo_fd = open(FIFO, O_RDONLY);
+       if(-1 == fifo_fd)
+       {
+           perror("open");
+           exit(EXIT_FAILURE);
+       }
+       //4. read the fifo file
+       int num = 0;
+       num = read(fifo_fd, buf, sizeof(buf));
+       printf("Read %d words: %s\n", num, buf);
+       close(fifo_fd);
+       return 0;
+   }
+   ```
+
+2. 程序解释
+
+   + 写进程fifo_send分为四个步骤执行，首先判断当前目录下是否已经存在my_fifo文件，不存在的话在当前目录下通过mkfifo()函数创建FIFO类型的文件my_fifo；再通过open()函数打开my_fifo文件，最后向文件中写入消息；
+   + 读进程的过程和写进程的类似，只没有了创建fifo文件的过程而已
+
+3. 实验现象
+
+   <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1u29b5rfrj31vi05cgpq.jpg" width="800" ></div>
+
+   > 现象描述：在仅仅只运行fifo_send进程的时候，没有任何输出，进程一直阻塞，直到fifo_rcv进程运行，两个进程才开始输出信息。
+
+   当写进程和读进程都设置成阻塞状态的时候，不论先执行那个进程，先执行的进程都会阻塞等待，待另一个进程执行后两个进程才正常执行。
+
+4. 探究有名管道的同步和阻塞机制
+
+   通过`fifo_fd=open(FIFO,O_RDONLY | O_NONBLOCK)`设置为非阻塞状态，`fifo_fd=open(FIFO,O_RDONLY)`设置为阻塞状态，对应四个进程分别为fifo_send(阻塞)、fifo_rcv(阻塞)、fifo_send_1(非阻塞)、fifo_rcv_1(非阻塞)
+
+   + 读进程阻塞、写进程阻塞
+
+     + 先执行fifo_send后执行fifo_rcv，结果正确
+
+       截图请见上面的实验现象
+
+     + 先执行fifo_rcv后执行fifo_send，结果正确
+
+     <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1u7bac7ewj31vg05qgp1.jpg" width="800" ></div>
+
+     具体的原因是读进程在open FIFO的时候由于没有s
+
+     通过查阅资料得到了FIFO管道的阻塞机制如下：
+
+     对于设置了阻塞的读进程而言：
+
+     > 1. 读进程阻塞的原因有三种：FIFO 中没有数据、有其他的读进程正在读取这些数据、没有写进程打开FIFO文件
+     > 2. 不论是哪种原因引起的阻塞，解开阻塞的原因都是FIFO有新的数据写入
+     > 3. 如果一个读进程有多个read操作，那么只会阻塞第一个read，其他的不会发生阻塞
+
+     对于设置了阻塞的写进程而言：
+
+     > 1. 当写入的数据量小于PIPE_BUF时，Linux保证写入原子性。如果此时管道中的空闲位置不足以容纳要写入的数据，泽写进程阻塞，直到管道中空间足够，一次性写入所有数据
+     > 2. 当写入的数据量大于PIPE_BUF时，Linux不再保证写入的原子性。一旦管道中有空闲位置便尝试写入数据，直到所有数据写入完成后返回。
+
+   + 读进程阻塞，写进程非阻塞
+
+     + 先执行fifo_send_1后执行fifo_rcv，写进程open函数返回-1
+
+     <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1u7jxe9xej31vg082gq1.jpg" width="800" ></div>
+
+     + 先执行fifo_rcv后执行fifo_send_1，结果正常
+
+     <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1u7lnstdkj31vi08cn0l.jpg" width="800" ></div>
+
+   + 读进程非阻塞，写进程阻塞
+
+     + 先执行fifo_send后执行fifo_rcv_1,结果正常
+
+     <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1u7s1xalwj31vg07sadq.jpg" width="800" ></div>
+
+     + 先执行fifo_rcv_1后执行fifo_send，程序崩溃
+
+     <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1u7vg5lzsj31vk07mdk6.jpg" width="800" ></div>
+
+   + 读写进程都是非阻塞
+
+     + 先执行fifo_send_1后执行fifo_rcv_1
+
+     <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1u7ymttkbj31ve062n0z.jpg" width="800" ></div>
+
+     + 先执行fifo_rcv_1后执行fifo_send_1
+
+     <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1u811kn01j31ve06utc6.jpg" width="800" ></div>
 
 #### 4.2.3 消息队列
 
