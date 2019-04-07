@@ -1484,7 +1484,6 @@ $\qquad​$一个生产者一个消费者线程同步。设置一个线程共享
 void timer_sleep (int64_t ticks) 
 {
   int64_t start = timer_ticks ();
-
   ASSERT (intr_get_level () == INTR_ON);
   while (timer_elapsed (start) < ticks) 
     thread_yield ();
@@ -1562,4 +1561,295 @@ enum intr_level intr_get_level (void)
 
 + 第7行返回t
 
-这样，函数`timer_ticks`的含义也就弄清楚了。
+这样，函数`timer_ticks`的含义也就弄清楚了。其实`timer_ticks`函数的作用很简单，就是想获取当前系统的ticks值而已，而上面通过这么大篇幅的介绍`timer_ticks`函数的4、6两行的作用，原因是第4行和第6行通过先关闭中断，待t获取到ticks值之后载恢复之前的中断状态，来保证操作的原子性，简单的说就是在t获取全局变量ticks的值的时候，不能被打断。
+
+然后接着分析`timer_sleep`函数的第6行`ASSERT (intr_get_level () == INTR_ON);`这里是一个断言，当`intr_get_lvel`函数获取的当前中断状态不是`INTR_ON`的时候发生警告且退出。
+
+`timer_sleep`函数剩下的就是一个循环了：
+
+```c
+while (timer_elapsed (start) < ticks) 
+    thread_yield ();
+```
+
+通过分析不难得出`timer_elapsed()`函数的作用是计算当前的系统ticks减去之前得到的start的差值，如果这个差值小于函数参数ticks的话一直执行thread_yield()函数。
+
+再看看`thread_yield`函数的具体定义（在`thread/thread.c文件中`），分析一下该函数的作用：
+
+```c
+/* Yields the CPU.  The current thread is not put to sleep and
+   may be scheduled again immediately at the scheduler's whim. */
+void thread_yield (void) 
+{
+  struct thread *cur = thread_current ();
+  enum intr_level old_level;
+  ASSERT (!intr_context ());
+  old_level = intr_disable ();
+  if (cur != idle_thread) 
+    list_push_back (&ready_list, &cur->elem);
+  cur->status = THREAD_READY;
+  schedule ();
+  intr_set_level (old_level);
+}
+```
+
+`thread_yield`函数第5行顾名思义，作用就是返回当前正在运行的线程，通过一个thread类型的结构体指针接受该函数返回值。
+
+`thread_yield`函数的第7行通过断言的方式判断中断类型，如果是由于I/O等引起的硬中断则退出，如果是软中断的话正常运行。
+
+再看第8行和第13行的之前也分析过，这是保证9-12行操作的原子性。
+
+再分析9-12行：
+
++ 9-10行：如何当前线程不是空闲的线程就调用list_push_back把当前线程的元素扔到就绪队列里面， 
++ 11行：把线程改成THREAD_READY状态
++ 12行：调用schedule函数
+
+再深入`schedule`函数(`thread/thread.c文件`)看看
+
+```c
+/* Schedules a new process.  At entry, interrupts must be off and
+   the running process's state must have been changed from
+   running to some other state.  This function finds another
+   thread to run and switches to it.
+   It's not safe to call printf() until thread_schedule_tail()
+   has completed. */
+static void schedule (void) 
+{
+  struct thread *cur = running_thread ();
+  struct thread *next = next_thread_to_run ();
+  struct thread *prev = NULL;
+
+  ASSERT (intr_get_level () == INTR_OFF);
+  ASSERT (cur->status != THREAD_RUNNING);
+  ASSERT (is_thread (next));
+
+  if (cur != next)
+    prev = switch_threads (cur, next);
+  thread_schedule_tail (prev);
+}
+```
+
+`schedule`函数首先获取当前正在运行的线程指针cur和下一个运行的线程next，之后是三个断言。
+
++ `ASSERT (intr_get_level () == INTR_OFF)`：保证中断状态是开启的
++ `ASSERT (cur->status != THREAD_RUNNING)`：保证当前运行的线程是RUNNING_THREAD的
++ `ASSERT (is_thread (next))`：保证下一个线程有效
+
+17-18行的作用是：如果当前线程和下一个要跑的线程不是同一个的话调用switch_threads返回给prev
+
+下面再看看`switch_threads`函数(在`threads/switch.S`中)这是一个完全由汇编语言编写的函数
+
+```assembly
+#include "threads/switch.h"
+
+#### struct thread *switch_threads (struct thread *cur, struct thread *next);
+####
+#### Switches from CUR, which must be the running thread, to NEXT,
+#### which must also be running switch_threads(), returning CUR in
+#### NEXT's context.
+####
+#### This function works by assuming that the thread we're switching
+#### into is also running switch_threads().  Thus, all it has to do is
+#### preserve a few registers on the stack, then switch stacks and
+#### restore the registers.  As part of switching stacks we record the
+#### current stack pointer in CUR's thread structure.
+
+.globl switch_threads
+.func switch_threads
+switch_threads:
+	# Save caller's register state.
+	#
+	# Note that the SVR4 ABI allows us to destroy %eax, %ecx, %edx,
+	# but requires us to preserve %ebx, %ebp, %esi, %edi.  See
+	# [SysV-ABI-386] pages 3-11 and 3-12 for details.
+	#
+	# This stack frame must match the one set up by thread_create()
+	# in size.
+	pushl %ebx
+	pushl %ebp
+	pushl %esi
+	pushl %edi
+
+	# Get offsetof (struct thread, stack).
+.globl thread_stack_ofs
+	mov thread_stack_ofs, %edx
+
+	# Save current stack pointer to old thread's stack, if any.
+	movl SWITCH_CUR(%esp), %eax
+	movl %esp, (%eax,%edx,1)
+
+	# Restore stack pointer from new thread's stack.
+	movl SWITCH_NEXT(%esp), %ecx
+	movl (%ecx,%edx,1), %esp
+
+	# Restore caller's register state.
+	popl %edi
+	popl %esi
+	popl %ebp
+	popl %ebx
+        ret
+.endfunc
+
+.globl switch_entry
+.func switch_entry
+switch_entry:
+	# Discard switch_threads() arguments.
+	addl $8, %esp
+
+	# Call thread_schedule_tail(prev).
+	pushl %eax
+.globl thread_schedule_tail
+	call thread_schedule_tail
+	addl $4, %esp
+
+	# Start thread proper.
+	ret
+.endfunc
+```
+
+分析这段汇编代码，首先将4个寄存器的值压栈保护寄存器状态，这四个寄存器的值是`switch_threads_frame`的成员，`switch_threads_frame`结构的具体定义如下(`thread/switch.h`中定义)：
+
+```c
+/* switch_thread()'s stack frame. */
+struct switch_threads_frame 
+  {
+    uint32_t edi;               /*  0: Saved %edi. */
+    uint32_t esi;               /*  4: Saved %esi. */
+    uint32_t ebp;               /*  8: Saved %ebp. */
+    uint32_t ebx;               /* 12: Saved %ebx. */
+    void (*eip) (void);         /* 16: Return address. */
+    struct thread *cur;         /* 20: switch_threads()'s CUR argument. */
+    struct thread *next;        /* 24: switch_threads()'s NEXT argument. */
+  };
+```
+
+全局变量`thread_stack_ofs`记录线程和栈之间的间隙，下面我们来看线程切换中保存现场的过程。
+
++ 35-36行：先把当前的线程指针放到eax中， 并把线程指针保存在相对基地址偏移量为edx的地址中
+
++ 40-41: 切换到下一个线程的线程栈指针， 保存在ecx中， 再把这个线程相对基地址偏移量edx地址（上一次保存现场的时候存放的）放到esp当中继续执行。
+
+  > 这里ecx, eax起容器的作用， edx指向当前现场保存的地址偏移量。简单来说就是保存当前线程状态， 恢复新线程之前保存的线程状态。
+
+由此我们可以看出`schedule`函数是先将当前线程放入就绪队列，如果下一个线程和当前线程不一样的话切换到下一个线程。
+
+再看看`shcedule`函数最后一行执行的操作，最后一行调用`thread_schedule_tail`函数，下面详细分析一下这个函数（`thread/thread.c`文件中）。
+
+```c
+void thread_schedule_tail (struct thread *prev)
+{
+  struct thread *cur = running_thread ();
+  
+  ASSERT (intr_get_level () == INTR_OFF);
+
+  /* Mark us as running. */
+  cur->status = THREAD_RUNNING;
+
+  /* Start new time slice. */
+  thread_ticks = 0;
+
+#ifdef USERPROG
+  /* Activate the new address space. */
+  process_activate ();
+#endif
+
+  /* If the thread we switched from is dying, destroy its struct
+     thread.  This must happen late so that thread_exit() doesn't
+     pull out the rug under itself.  (We don't free
+     initial_thread because its memory was not obtained via
+     palloc().) */
+  if (prev != NULL && prev->status == THREAD_DYING && prev != initial_thread) 
+    {
+      ASSERT (prev != cur);
+      palloc_free_page (prev);
+    }
+}
+```
+
+首先是获得当前线程的的cur(切换之后的线程)，然后将cur的状态改为`THREAD_RUNNING`，然后thread_ticks清零开始新的线程切换时间片。然后调用diaoyong`process_activate`函数申请新的地址空间，再分析`process_active`函数(在`useruserprog/process.c`文件中定义)
+
+```c
+/* Sets up the CPU for running user code in the current
+   thread.
+   This function is called on every context switch. */
+void process_activate (void)
+{
+  struct thread *t = thread_current ();
+  /* Activate thread's page tables. */
+  pagedir_activate (t->pagedir);
+  /* Set thread's kernel stack for use in processing
+     interrupts. */
+  tss_update ();
+}
+```
+
+关键的就是`pagedir_activate()`函数和`tss_update`函数，这两个函数分别位于`userprog/pagedir.c`和`userprog/tss.c`文件中
+
+下面再进入`pagedir_activate()`函数中查看。
+
+```c
+/* Loads page directory PD into the CPU's page directory base
+   register. */
+void pagedir_activate (uint32_t *pd) 
+{
+  if (pd == NULL)
+    pd = init_page_dir;
+
+  /* Store the physical address of the page directory into CR3
+     aka PDBR (page directory base register).  This activates our
+     new page tables immediately.  See [IA32-v2a] "MOV--Move
+     to/from Control Registers" and [IA32-v3a] 3.7.5 "Base
+     Address of the Page Directory". */
+  asm volatile ("movl %0, %%cr3" : : "r" (vtop (pd)) : "memory");
+}
+```
+
+这个汇编指令将当前线程的页目录指针存储到CR3（页目录表物理内存基地址寄存器）中，也就是说这个函数更新了现在的页目录表
+
+再进入`tss_update`函数中：
+
+```c
+/* Sets the ring 0 stack pointer in the TSS to point to the end
+   of the thread stack. */
+void tss_update (void) 
+{
+  ASSERT (tss != NULL);
+  tss->esp0 = (uint8_t *) thread_current () + PGSIZE;
+}
+```
+
+tss指的是 task state segment， 叫任务状态段， 任务（进程）切换时的任务现场信息。这里其实是把TSS的一个栈指针指向了当前线程栈的尾部， 也就是更新了任务现场的信息和状态。
+
+到此`process_activate`函数的分析完毕，它做了两件事：
+
++ 更新页目录表
++ 更新任务现场信息（tss）
+
+在继续看`thread_schedule_tail`函数的最后4行：
+
+```c
+if (prev != NULL && prev->status == THREAD_DYING && prev != initial_thread) 
+{
+    ASSERT (prev != cur);
+    palloc_free_page (prev);
+}
+```
+
+这里是说如果我们切换的线程状态是THREAD_DYING（代表欲要销毁的线程）的话， 调用palloc_free_page（`thread/palloc.c`文件中定义）：
+
+```c
+/* Frees the page at PAGE. */
+void palloc_free_page (void *page) 
+{
+  palloc_free_multiple (page, 1);
+}
+```
+
+简单而言作用就是释放PAGE参数中的页面
+
+到此，`thread_schedule_tail`函数分析完毕，其作用就是分配恢复之前执行的状态和现场， 如果当前线程死了就清空资源。
+
+`schedule`函数的作用就是拿下一个线程切换过来继续运行。`thread_yield`函数的作用是shi把当前进程放在就绪队列里，调用`schedule`切换到下一个进程。
+
+最后返回到最顶层的`timer_sleep`函数，他的作用就是在ticks的时间内nei，如果线程处于running状态就不断的把它放在就绪队列不让它执行。
