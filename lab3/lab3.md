@@ -1260,3 +1260,306 @@ $\qquad​$一个生产者一个消费者线程同步。设置一个线程共享
 
 #### 4.2.3 消息队列
 
+1. 实验代码
+
+   > 本实验代码文件分为Server.c和Client.c两个
+
+   `Server.c:`
+
+   ```c
+   #include <stdio.h>
+   #include <stdlib.h>
+   #include <string.h>
+   #include <unistd.h>
+   #include <sys/types.h>
+   #include <sys/msg.h>
+   #include <sys/ipc.h>
+   #include <signal.h>
+   
+   #define BUF_SIZE 128
+   
+   //Rebuild the strcut (must be)
+   struct msgbuf
+   {
+       long mtype;
+       char mtext[BUF_SIZE];
+   };
+   int main(int argc, char *argv[])
+   {
+       //1. creat a mseg queue
+       key_t key;
+       int msgId;
+       
+       key = ftok(".", 0xFF);
+       msgId = msgget(key, IPC_CREAT|0644);
+       if(-1 == msgId)
+       {
+           perror("msgget");
+           exit(EXIT_FAILURE);
+       }
+   
+       printf("Process (%s) is started, pid=%d\n", argv[0], getpid());
+   
+       while(1)
+       {
+           alarm(0);
+           alarm(600);     //if doesn't receive messge in 600s, timeout & exit
+           struct msgbuf rcvBuf;
+           memset(&rcvBuf, '\0', sizeof(struct msgbuf));
+           msgrcv(msgId, &rcvBuf, BUF_SIZE, 1, 0);                
+           printf("Receive msg: %s\n", rcvBuf.mtext);
+           
+           struct msgbuf sndBuf;
+           memset(&sndBuf, '\0', sizeof(sndBuf));
+   
+           strncpy((sndBuf.mtext), (rcvBuf.mtext), strlen(rcvBuf.mtext)+1);
+           sndBuf.mtype = 2;
+   
+           if(-1 == msgsnd(msgId, &sndBuf, strlen(rcvBuf.mtext)+1, 0))
+           {
+               perror("msgsnd");
+               exit(EXIT_FAILURE);
+           }
+               
+           //if scanf "end~", exit
+           if(!strcmp("end~", rcvBuf.mtext))
+                break;
+       }     
+       printf("THe process(%s),pid=%d exit~\n", argv[0], getpid());
+       return 0;
+   }
+   ```
+
+   `Client.c:`
+
+   ```c
+   #include <stdio.h>
+   #include <stdlib.h>
+   #include <string.h>
+   #include <unistd.h>
+   #include <sys/types.h>
+   #include <sys/msg.h>
+   #include <sys/ipc.h>
+   #include <signal.h>
+   
+   #define BUF_SIZE 128
+   
+   //Rebuild the strcut (must be)
+   struct msgbuf
+   {
+       long mtype;
+       char mtext[BUF_SIZE];
+   };
+   
+   
+   int main(int argc, char *argv[])
+   {
+       //1. creat a mseg queue
+       key_t key;
+       int msgId;
+       
+       printf("THe process(%s),pid=%d started~\n", argv[0], getpid());
+   
+       key = ftok(".", 0xFF);
+       msgId = msgget(key, IPC_CREAT|0644);
+       if(-1 == msgId)
+       {
+           perror("msgget");
+           exit(EXIT_FAILURE);
+       }
+   
+       //2. creat a sub process, wait the server message
+       pid_t pid;
+       if(-1 == (pid = fork()))
+       {
+           perror("vfork");
+           exit(EXIT_FAILURE);
+       }
+   
+       //In child process
+       if(0 == pid)
+       {
+           while(1)
+           {
+               alarm(0);
+               alarm(100);     //if doesn't receive messge in 100s, timeout & exit
+               struct msgbuf rcvBuf;
+               memset(&rcvBuf, '\0', sizeof(struct msgbuf));
+               msgrcv(msgId, &rcvBuf, BUF_SIZE, 2, 0);                
+               printf("Server said: %s\n", rcvBuf.mtext);
+           }
+           
+           exit(EXIT_SUCCESS);
+       }
+   
+       else    //parent process
+       {
+           while(1)
+           {
+               usleep(100);
+               struct msgbuf sndBuf;
+               memset(&sndBuf, '\0', sizeof(sndBuf));
+               char buf[BUF_SIZE] ;
+               memset(buf, '\0', sizeof(buf));
+               
+               printf("\nInput snd mesg: ");
+               scanf("%s", buf);
+               
+               strncpy(sndBuf.mtext, buf, strlen(buf)+1);
+               sndBuf.mtype = 1;
+   
+               if(-1 == msgsnd(msgId, &sndBuf, strlen(buf)+1, 0))
+               {
+                   perror("msgsnd");
+                   exit(EXIT_FAILURE);
+               }            
+               //if scanf "end~", exit
+               if(!strcmp("end~", buf))
+                   break;
+           }
+           
+           printf("THe process(%s),pid=%d exit~\n", argv[0], getpid());
+       }
+       return 0;
+   }
+   ```
+
+2. 程序解释
+
+   + 程序分为服务器端和客户端，客户端向服务器发起通信，服务器端收到数据后将一模一样的数据返回
+
+   + 通过mgsrcv函数读取客户端传过来的消息，msgrcv的参数列表见下面。
+
+     `int msgrcv(int msqid, void  *ptr, size_t  length, long  type, int  flag);`
+
+   | 参数 |     msgid      |      ptr       |    length    |                             type                             |                          flag                          |
+   | :--: | :------------: | :------------: | :----------: | :----------------------------------------------------------: | :----------------------------------------------------: |
+   | 含义 | 消息队列标识符 | 消息缓冲区指针 | 消息数据长度 |                 决定从队列中返回那一条下消息                 |                        阻塞与否                        |
+   | 备注 |                |                |              | =0 返回消息队列中第一条消息<br/>>0 返回消息队列中等于mtype 类型的第一条消息。
+<0 返回mtype<=type 绝对值最小值的第一条消息。 | msgflg 为０表示阻塞方式，设置IPC_NOWAIT 表示非阻塞方式 |
+
+   + 通过msgsnd函数向消息队列中加入消息，msgsnd的参数列表见下面。
+
+   `int msgsnd(int  msqid, const  void   *ptr, size_t    length, int   flag);`
+
+   | 参数 |     msgid      |      ptr       |    length    |                          flag                          |
+   | :--: | :------------: | :------------: | :----------: | :----------------------------------------------------: |
+   | 含义 | 消息队列标识符 | 消息缓冲区指针 | 消息数据长度 |                        阻塞与否                        |
+   | 备注 |                |                |              | msgflg 为０表示阻塞方式，设置IPC_NOWAIT 表示非阻塞方式 |
+
+   + 客户端的子进程主要负责消息的接受，父进程主要负责消息的发送；
+   + 通过分析上面的代码可以知道，客户端和服务器端都是以阻塞的方式读取和写入消息
+
+3. 程序运行结果
+
+   <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1u9ayehs2j31vg0iogu3.jpg" width="800" ></div>
+
+4. 探究消息队列的同步和阻塞机制
+
+   > 通过上面的程序解释中可以看出，消息队列通过msgrcv和msgsnd两个函数的flag参数控制是否阻塞，将其设置为IPC_NOWAIT表示不阻塞；如果客户端和服务器端都设置阻塞话，就可以达到同步的目的
+
+   现在做出如下探究：
+
+   + 客服端不阻塞(代码为Client_1.c),服务器端阻塞，得到结果如下。
+
+   <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1uaek4005j31ve06ygou.jpg" width="800" ></div>
+
+   > 可以看到当客户端不阻塞的话在客户端接受服务器端消息的时候会无限制的打印消息队列中的空消息，哪怕消息队列中没有任何消息
+
+   + 客户端阻塞，服务器端不阻塞(代码为Server_1.c)
+
+   <div align="center"><img src="https://ws1.sinaimg.cn/large/006CotQ3ly1g1uaisf6n7j31vc0l6463.jpg" width="800" ></div>
+
+   > 可以看到当服务器端没有设置阻塞的时候，服务器端会一直接受消息队列中的空消息并向客户端转发。 
+
+## Task 5
+
+> 本实验分析进程上下文切换的代码，说明实现的保存和恢复的上下文内容以及进程切换的工作流程。
+
+我们首先从`devices/timer.c`文件中的timer_sleep函数开始 分析，下面是该函数的具体代码：
+
+```c
+/* Sleeps for approximately TICKS timer ticks.  Interrupts must
+   be turned on. */
+void timer_sleep (int64_t ticks) 
+{
+  int64_t start = timer_ticks ();
+
+  ASSERT (intr_get_level () == INTR_ON);
+  while (timer_elapsed (start) < ticks) 
+    thread_yield ();
+}
+```
+
+下面开始逐行分析这个函数，第5行的`timer_ticks`函数也在timer.c文件中，跳转到该函数中：
+
+```c
+/* Returns the number of timer ticks since the OS booted. */
+int64_t timer_ticks (void) 
+{
+  enum intr_level old_level = intr_disable ();
+  int64_t t = ticks;
+  intr_set_level (old_level);
+  return t;
+}
+```
+
+`timer_ticks`函数中第4行涉及一个名为intr_disable()的函数，该函数的具体定义在`devices/interrupt.c`文件中。
+
+```c
+/* Disables interrupts and returns the previous interrupt status. */
+enum intr_level intr_disable (void) 
+{
+  enum intr_level old_level = intr_get_level ();
+
+  /* Disable interrupts by clearing the interrupt flag.
+     See [IA32-v2b] "CLI" and [IA32-v3a] 5.8.1 "Masking Maskable
+     Hardware Interrupts". */
+  asm volatile ("cli" : : : "memory");
+  return old_level;
+}
+```
+
+在看看返回值`intr_level`是个什么结构,代码在`devices/interrupt.h`中：
+
+```c
+/* Interrupts on or off? */
+enum intr_level 
+  {
+    INTR_OFF,             /* Interrupts disabled. */
+    INTR_ON               /* Interrupts enabled. */
+  };
+```
+
+可以发现，intr_level这个枚举类型表示的是是否允许中断。于是分析得到`intr_disable`函数做了两件事。1. 调用`intr_old_level`函数 2. 直接执行汇编代码保证这个线程不能被中断。之后返回调用`intr_old_level`函数的返回值。
+
+再看看`intr_get_level`函数的实现细节，该函数的定义也在`devices/interrupt.c`文件中
+
+```c
+/* Returns the current interrupt status. */
+enum intr_level intr_get_level (void) 
+{
+  uint32_t flags;
+  /* Push the flags register on the processor stack, then pop the
+     value off the stack into `flags'.  See [IA32-v2b] "PUSHF"
+     and "POP" and [IA32-v3a] 5.8.1 "Masking Maskable Hardware
+     Interrupts". */
+  asm volatile ("pushfl; popl %0" : "=g" (flags));
+  return flags & FLAG_IF ? INTR_ON : INTR_OFF;
+}
+```
+
+通过注释信息和分析汇编代码可以知道，`intr_get_level`这个函数的作用是返回当前的中断状态。`intr_get_level`函数弄清楚了之后，返回上一层函数中，到了`intr_disable`函数中，这样就可以清楚的知道`intr_disable`函数的作用：
+
++ 获取当前中断状态
++ 将当前中断状态更改为不可中断
++ 返回先前的中断状态
+
+弄清楚了`intr_disable`函数，接着看`timer_ticks`函数的5、6、7行
+
++ 第5行通过一个int64_t类型的变量t获取全局变量ticks的值；
++ 第6行`intr_set_level(old_level)`表示将当前中断状态设置为之前的中断状态。
+
++ 第7行返回t
+
+这样，函数`timer_ticks`的含义也就弄清楚了。
