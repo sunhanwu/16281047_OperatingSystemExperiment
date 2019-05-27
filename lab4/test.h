@@ -35,9 +35,10 @@ typedef struct MemSchedule
     int change=0;
     float t,r;
 //   队列长度
-    int queue_len=3;
-    queue <int> free;
-    queue <int> modified;
+    int queue_free_len = 0;
+    int queue_modified_len = 0;
+    WorkItem free[2];
+    WorkItem Modified[2];
 
 
 }MemSchedule;
@@ -124,9 +125,32 @@ int SearchVisitSqe(int seq[],int work_now,int target,int direct,int length)
 }
 
 //此函数用于打印空闲队列和修改队列
-int Display(queue <int> q)
+WorkItem* Insert(WorkItem* q,int len,WorkItem item,int priority)
 {
-    jk
+    if(len==0)
+    {
+        q[0] = item;
+        return q;
+    }
+    else if(len==1)
+    {
+        q[1] = item;
+        return q;
+    }
+    else
+    {
+        if(q[0].priority > q[1].priority)
+        {
+            q[0] = item;
+            return q;
+        }
+        else
+        {
+            q[1] = item;
+            return q;
+        }
+    }
+
 }
 
 #endif //LAB4_TEST_H

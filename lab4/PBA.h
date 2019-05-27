@@ -4,18 +4,16 @@
 
 #ifndef LAB4_PBA_H
 #define LAB4_PBA_H
-
 #include "test.h"
 #include <stdio.h>
 #include <time.h>
-//using namespace std;
 
 int PBA(MemSchedule s1)
 {
-    int miss = 0;
     clock_t start,finish;
     start = clock();
-    printf("***************PBA算法*****************\n");
+    int miss=0;
+    printf("***************先入先出算法*****************\n");
     printf("seq\t");
     for (int i=0;i<s1.e;i++)
     {
@@ -24,7 +22,7 @@ int PBA(MemSchedule s1)
     printf("\n");
     for (int i=0;i<s1.length;i++)
     {
-        //pointer指向下一个将要访问的页号
+        //pointer指向当前正在访问的物理序列
         int pointer=s1.VisitSeq[i];
         printf("%d:\t",pointer);
         //判断当前是否还有空闲物理块
@@ -82,8 +80,67 @@ int PBA(MemSchedule s1)
 
 
         }
+        else
+        {
+            //表示没有空闲物理块
+            //还是使用flag表示当前访问页号是否在内存块中
+            int flag=0;
+            for (int m=0;m<s1.work_len;m++)
+            {
+                //每访问一个新的页面，所有优先级全部下降一
+                s1.WorkSpace[m].priority--;
+                if (s1.WorkSpace[m].seq == pointer)
+                {
+                    flag = 1;
+                    s1.WorkSpace[m].priority = s1.e;
+
+                }
+            }
+            if (flag == 1)
+            {
+                //表示内存块已经出现过
+                s1.change = -1;
+            }
+            if (flag == 0)
+            {
+                //min表示最小优先级的那个内存块号
+                int min_pri=0xffffff;
+                for ( int m=0;m<s1.work_len;m++)
+                {
+                    //和其他算法的区别只有优先级排序计算的方式不同
+                    int n = s1.WorkSpace[m].priority;
+                    if (n < min_pri)
+                    {
+                        s1.change = m;
+                        min_pri = n;
+                    }
+                }
+                //表示发生替换变化的块号s1.change
+                s1.WorkSpace[s1.change].seq = pointer;
+                //设置新换入的页面优先级为work_len
+                s1.WorkSpace[s1.change].priority = s1.e;
+            }
+            for (int m=0;m<s1.e;m++)
+            {
+                if (m == s1.change)
+                {
+                    printf("%d@\t", s1.WorkSpace[m].seq);
+                    miss++;
+                }
+                else
+                    printf("%d\t", s1.WorkSpace[m].seq);
+            }
+
+
+        }
         printf("\n");
     }
-
+    finish = clock();
+    printf("******************算法评估**************\n");
+    printf("缺页率:\t%.2f %%\n",(miss*1.0)/s1.length*100);
+    printf("时间开销:\t%.2f ms\n",(double)(finish-start));
+    free(s1.WorkSpace);
+    free(s1.VisitSeq);
+    return  0;
 }
 #endif //LAB4_PBA_H
