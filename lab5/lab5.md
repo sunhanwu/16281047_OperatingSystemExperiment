@@ -2,6 +2,8 @@
 
 > <center>孙汉武	16281047	安全1601</center>
 
+<center>[实验源码链接:https://github.com/sunhanwu/16281047_OperatingSystemExperiment/tree/master/lab5](https://github.com/sunhanwu/16281047_OperatingSystemExperiment/tree/master/lab5)</center>
+
 [TOC]
 
 ## 一 概要设计
@@ -119,7 +121,7 @@ $\qquad$这部分主要定义的是一些方便操作的函数，例如将文件
 
 $\qquad$到此，文件系统部分所有数据结构和函数均介绍完毕
 
-### 1.3 菜单驱动系统
+### 1.3 菜单系统设计
 
 $\qquad$完成IO系统的设计和文件系统的设计，需要对上述的功能设计一个外壳程序，即一个用户界面便于使用，总结文件系统的所有功能，设计的菜单驱动程序包含如下两层菜单。
 
@@ -416,5 +418,573 @@ typedef struct MenuItem //目录对应0号文件描述符,一个目录项占据1
     char FileName[12]; //目录项中文件名的最大长度为16字节
     int FileDescriptorNum;//文件描述符号
 }MenuItem;
+#pragma pack(pop)
 ```
 
+> 同样目录项结构体也是经过4字节对齐的，作用与上面的文件描述符结构体相似
+
+|      成员名       |    类型    |  大小  |     作用     |
+| :---------------: | :--------: | :----: | :----------: |
+|     FileName      | 字符型数组 | 12字节 |  存储文件名  |
+| FileDescriptorNum |    整型    | 4字节  | 文件描述符号 |
+
+### 3.2 文件系统初始化
+
+$\qquad$文件系统的初始化包括对文件描述符数组的初始化和目录项数组的初始化，和IO系统中的磁盘数组初始化一样，文件系统的初始化也就是对这两个数组进行一些编号操作等基本操作。
+
+1. 文件描述符初始化：`InitFileDescriptor(void):`
+
+```cpp
+void InitFileDescriptor(void)
+{
+    for(int i=0;i<256;i++)
+    {
+      int  DiskNum[3]; //磁盘号数组
+      DiskNum[0] = i;
+      DiskNum[1] = -1;
+      DiskNum[2] = -1;
+      int FileDescriptorNum = i; //文件描述符号
+      ChangeFileDescriptor(&filedescriptor[i],0,DiskNum,FileDescriptorNum,'Y');
+    }
+    filedescriptor[0].IsFree = 'N';
+    FileDescriptorToDisk();
+}
+```
+
+$\qquad$首先遍历整个文件描述符数组，进行编号并且初始化的时候文件描述符对应的三个磁盘块只分配一个。
+
+2. 目录项初始化
+
+```cpp
+void InitMenu(void)
+{
+    for(int i=0;i<32;i++)
+        menuitem[i].FileDescriptorNum = i;
+}
+```
+
+### 3.3 文件系统用户接口
+
+1. 创建文件：`create(char filename[]):`
+
+```cpp
+//下面是文件系统与用户直接的接口
+void create(char filename[])
+{
+    int FileDescriptorNum,MenuItemNum,DiskNum;
+    //寻找空闲目录项
+    MenuItemNum = SearchMenuItem();
+    strcpy(menuitem[MenuItemNum].FileName,filename);
+    //寻找空闲文件描述符
+    FileDescriptorNum = SearchFileDescriptor();
+    menuitem[MenuItemNum].FileDescriptorNum = FileDescriptorNum;
+    //寻找空闲磁盘块
+    DiskNum = SearchBitMap();
+    filedescriptor[FileDescriptorNum].DiskNum[0] = DiskNum;
+    filedescriptor[FileDescriptorNum].IsFree = 'N';
+    //修改磁盘位图
+    ChangeBitMap(DiskNum,'Y');
+}
+```
+
+$\qquad$创建一个新的文件的时候，首先需要搜索一个空闲的目录项，将文件名存储在目录项中，然后在搜索一个空闲的描述符，分配该文件描述符给他文件，在搜索 一个空闲的磁盘块，将该磁盘块存储在文件描述符中。最后修改文件描述符状态和位图对应磁盘块的状态为占用。
+
+2. 删除文件：`destroy(char filename[])：`
+
+```cpp
+void destroy(char filename[])
+{
+    int MenuItemNum=-1;
+    for(int i=0;i<32;i++)
+        if(strcmp(menuitem[i].FileName,filename)==0)
+            MenuItemNum = i;
+    if(MenuItemNum==-1)
+    {
+        printf("目录中没有此文件！\n");
+        return;
+    }
+    int FileDesCriptorNum = menuitem[MenuItemNum].FileDescriptorNum;
+    //将目录项重置,重置时只需要将文件名删除，而不需要重置文件描述符，因为前面判断文件是否存在的条件是文件名是否存在
+    memset(menuitem[MenuItemNum].FileName,0, sizeof(menuitem[MenuItemNum].FileName));
+    //修改文件描述符为空闲状态
+    filedescriptor[FileDesCriptorNum].IsFree = 'Y';
+    for(int i=0;i<3;i++)
+    {
+        if(filedescriptor[FileDesCriptorNum].DiskNum[i]!=-1)
+        ChangeBitMap(filedescriptor[FileDesCriptorNum].DiskNum[i],'N');
+    }
+}
+```
+
+$\qquad$根据文件名在目录项数组中搜索对应的目录项，删除文件名，再找到目录项后读取该文件对应的文件描述符号，修改文件描述符状态为空闲；再讲文件描述符中记录的所有磁盘块状态全部改为空闲。
+
+3. 打开文件：`open(char filename[])`
+
+```cpp
+int open(char filename[])
+{
+    int MenuItemNum=-1;
+    for(int i=0;i<32;i++)
+        if(strcmp(menuitem[i].FileName,filename)==0)
+            MenuItemNum = i;
+    if(MenuItemNum==-1)
+    {
+        printf("目录中没有此文件！\n");
+        return -1;
+    }
+    else
+        //返回文件描述符号
+        return menuitem[MenuItemNum].FileDescriptorNum;
+}
+```
+
+$\qquad$这个函数通过遍历目录项数组，找到文件名符合的目录项，读取其文件描述符号返回，没有找到的话打印错误信息并返回-1
+
+4. 读取文件：`read(int index,int mem_area,int count)：`
+
+```cpp
+char* read(int index,int mem_area,int count)
+{
+   char *temp;
+   char block[512];
+   temp = (char *)malloc(count* sizeof(char));
+   ReadBlock(filedescriptor[index].DiskNum[0],block);
+   memcpy(temp,&block[mem_area],count);
+   return temp;
+}
+```
+
+$\qquad$读取文件内容函数首先找到文件描述符中的磁盘号，然后调用IO系统提供的读取磁盘块的接口读取该磁盘块，读取后按照要求取对应位置指定长度的数据返回。
+
+5. 写文件：`write(int index,int mem_area,int count,char content[])：`
+
+```cpp
+void write(int index,int mem_area,int count,char content[])
+{
+    char temp[512];
+    char *s1=(char*)malloc(mem_area* sizeof(char));
+    char *s2=(char*)malloc(mem_area* sizeof(char));
+    char *s;
+    int DiskNum = filedescriptor[index].DiskNum[0];
+    ReadBlock(DiskNum,temp);
+    memcpy(s1,temp,mem_area);
+    memcpy(s2,&temp[mem_area],512-mem_area);
+    s = strcat(s1,content);
+    s = strcat(s,s2);
+    filedescriptor[index].Length = strlen(s);
+    WriteBlock(DiskNum,s);
+}
+```
+
+$\qquad$写文件的时候需要考虑可能是在原来文件的基础上，在某段插入一些内容，所以用s1字符指针保存mem_area之前的信息，s2保存mem_area之后的信息，加入要加入的内容后在连接成为一个完整的字符数组，最后调用IO系统提供的写入磁盘块接口写入 对应磁盘块。
+
+### 3.4 搜索文件系统
+
+$\qquad$上面文件系统的用户接口中 很多地方用到了搜索文件描述符、搜索目录项等操作，所以需要单独写几个函数用于搜索文件描述符和目录项等结构。
+
+1. 搜索空闲文件描述符:`SearchFileDescriptor():`
+
+```cpp
+int SearchFileDescriptor()
+{
+    for(int i=0;i<256;i++)
+    {
+        if(filedescriptor[i].IsFree == 'Y')
+            return i;
+    }
+    return -1;
+}
+```
+
+$\qquad$遍历文件描述符数组，找到空闲的文件描述符号返回
+
+2. 搜索空闲目录项：`SearchMenuItem()：`
+
+```cpp
+int SearchMenuItem()
+{
+    for(int i=0;i<32;i++)
+    {
+        if(strlen(menuitem[i].FileName)==0)
+            return i;
+    }
+    return -1;
+}
+```
+
+$\qquad$遍历所有的目录项数组，知道找到空闲的目录项返回目录项号
+
+### 3.5 其它文件系统函数
+
+$\qquad$除了上面介绍的文件操作之外，还需一些函数，例如将文件描述符写入到磁盘中去，将目录项数组写入到第一个文件描述符对应的磁盘中；从磁盘中恢复文件描述符数组，恢复目录项数组。
+
+1. 将文件描述符数组写入磁盘：`FileDescriptorToDisk(void)：`
+
+```cpp
+//将文件描述符写入磁盘中
+void FileDescriptorToDisk(void)
+{
+    char temp_block[512];
+    int index = 0;
+    int DiskNumIndex = 2;
+    for(int i=0;i<256;i++)
+    {
+        char temp_descriptor[24];
+        memcpy(temp_descriptor,&filedescriptor[i], sizeof(FileDescriptor));
+        memcpy(&temp_block[index*24],temp_descriptor,24);
+        index++;
+        int t = index % 21;
+        if(t == 0)
+        {
+            index = 0;
+            if(DiskNumIndex<10)
+            {
+                memcpy(ldisk[0][0][DiskNumIndex].Content,temp_block,512);
+                ChangeBitMap(DiskNumIndex,'Y');
+            }
+            else
+            {
+                memcpy(ldisk[0][1][DiskNumIndex-B].Content,temp_block,512);
+                ChangeBitMap(DiskNumIndex,'Y');//修改位图
+            }
+            DiskNumIndex++;
+        }
+    }
+}
+```
+
+$\qquad$遍历整个文件描述符数组，每个文件描述符占据24字节信息，21个文件描述符一组，一共504字节，将每组504字节信息存入到一个磁盘块中，存入后修改磁盘的状态为占用。
+
+2. 从磁盘恢复文件描述符数组：`DiskToFileDescriptor(void)：`
+
+```cpp
+//将磁盘读取的信息恢复
+void DiskToFileDescriptor(void)
+{
+    for(int i=2;i<15;i++)
+    {
+        char temp[512];
+        if (i<B)
+            memcpy(temp,ldisk[0][0][i].Content,512);
+        else
+            memcpy(temp,ldisk[0][1][i-B].Content,512);
+        for (int j=0;j<21;j++)
+        {
+            if(((i-2)*21+j)>256)
+                break;
+            char temp_FileDescriptor[24];
+            memcpy(temp_FileDescriptor,&temp[j*24],24);
+            FileDescriptor *f;
+            f = (FileDescriptor*)temp_FileDescriptor;
+            int num = (i-2)*21+j;
+            filedescriptor[num].IsFree = f->IsFree;
+            filedescriptor[num].DiskNum[0] = f->DiskNum[0];
+            filedescriptor[num].DiskNum[1] = f->DiskNum[1];
+            filedescriptor[num].DiskNum[2] = f->DiskNum[2];
+            filedescriptor[num].Length = f->Length;
+            filedescriptor[num].Num = f->Num;
+        }
+    }
+}
+```
+
+$\qquad$由于每个磁盘块的空间只能存储21个文件描述符，所以每隔21就需要将index归零一次，用于从新读取一个新的磁盘的文件描述符信息，每次读取的是一整个磁盘的信息，长度是512字节，而每个文件描述符的大小为24，所以首先全部服务磁盘块信息到`temp_block`，然后每次读取24字节信息到`temp_descriptor`,之后通过强制类型转换，将字符换数组转化为文件描述符结构体指针，这样就将磁盘块中的信息读入。
+
+3. 将目录项数组写入文件描述符：`MenuToFileDescriptor(void)：`
+
+```cpp
+//将目录内容写入文件描述中
+void MenuToFileDescriptor(void)
+{
+    char temp_FileDescriptor[512];
+    for(int i=0;i<32;i++)
+    {
+        char temp_menuitem[16];
+        memcpy(temp_menuitem,&menuitem[i],16);
+        memcpy(&temp_FileDescriptor[i*16],temp_menuitem,16);
+    }
+    filedescriptor[0].IsFree = 'N';
+    filedescriptor[0].DiskNum[0] = SearchBitMap();
+    filedescriptor[0].Length = 512;
+    WriteBlock(filedescriptor[0].DiskNum[0],temp_FileDescriptor);
+}
+```
+
+$\qquad$将所有的目录项合并为一个512字节的字符数组(注意使用的是memcpy而不是strcpy)然后将第一个文件描述符的状态修改位占用，并将字符数组写入第一个文件描述符对应的磁盘块。
+
+4. 从第一个文件描述符恢复目录项数组：`FileDescriptorToMenu(void)：`
+
+```cpp
+void FileDescriptorToMenu(void)
+{
+    char MenuContent[512];
+    ReadBlock(filedescriptor[0].DiskNum[0],MenuContent);
+    for(int i=0;i<32;i++)
+    {
+        char temp_menuitem[16];
+        memcpy(temp_menuitem,&MenuContent[i*16],16);
+        MenuItem *t;
+        t = (MenuItem *)temp_menuitem;
+        strcpy(menuitem[i].FileName,t->FileName);
+        menuitem[i].FileDescriptorNum = t->FileDescriptorNum;
+    }
+}
+```
+
+$\qquad$首先读取第一个文件描述符对应的磁盘块信息到`MenuContent`字符数中去，然后每次读取16字节信息，将读取的16字节信息强制转换为目录项指针。这样磁盘上存储的所欲目录项信息就会被全部读取。
+
+### 四 菜单系统
+
+> 菜单系统代码在main.cpp文件中
+
+$\qquad$IO系统和文件系统准备好之后就可以更具需要的功能设计出具体的功能，并对应写出一个菜单系统。
+
+对应的菜单系统有如下函数：
+
+1. 查看目录函数：`ShowDir()`
+
+```cpp
+void ShowDir()
+{
+    int index =1;
+    int exist = 0;
+    printf("****************目录***********************\n");
+    printf("当前目录下文件有:\n");
+    for(int i=0;i<32;i++)
+    {
+        if(strlen(menuitem[i].FileName)!=0)
+        {
+            printf("%d %s %dB\n",index,menuitem[i].FileName,filedescriptor[menuitem[i].FileDescriptorNum].Length);
+            exist++;
+        }
+        index++;
+    }
+    printf("一共存在%d个文件\n",exist);
+    printf("****************************************\n");
+}
+```
+
+$\qquad$可以看到这个查看目录函数遍历目录项数组，打印所有非空目录项 内容，包括文件名和文件大小，最后统计出一共存在多少个文件。
+
+2. 打印位图：`ShowBitMap()`
+
+```cpp
+void ShowBitMap(void)
+{
+    printf("\n****************位图**********************\n");
+    int used = 0;
+    printf("当前的磁盘使用情况如下(Y表示使用，N表示未使用)\n");
+    for(int i=0;i<C;i++)
+    {
+        printf("%d号柱面磁盘信息如下:\n",i);
+        printf("   区:0 1 2 3 4 5 6 7 8 9\n");
+        printf("头\n");
+        for(int j=0;j<H;j++)
+        {
+            printf("%d\t:",j);
+            for(int k=0;k<B;k++)
+            {
+                int t=i*H*B+j*B+k;
+                if(t<512)
+                {
+                    printf("%c ",ldisk[0][0][0].Content[t]);
+                    if(ldisk[0][0][0].Content[t] == 'Y')
+                        used++;
+                }
+                else
+                {
+                    printf("%c ",ldisk[0][0][1].Content[t-512]);
+                    if(ldisk[0][0][0].Content[t] == 'Y')
+                        used++;
+                }
+            }
+            printf("\n");
+        }
+    }
+    printf("总共使用%d个磁盘块，剩余%d个磁盘块空闲\n",used,(C*B*H-used));
+    printf("****************************************\n");
+}
+```
+
+$\qquad$这个函数的大部分代码在进行位图打印信息的排版，每个柱面为一页，每一页中每一行表示一个磁头，每一列表示一个扇区。最后统计出所有磁盘的使用占比。
+
+3. 主菜单程序
+
+> 由于整个函数代码太长，所以只展示核心代码，完整代码请查看github
+
+```cpp
+switch (choice2)
+{
+    case 1:ShowDir();break;
+    case 2:
+        printf("请输入要创建的文件名：");
+        scanf("%s",filename);
+        create(filename);
+        break;
+    case 3:
+        printf("请输入要删除的文件名：");
+        scanf("%s",filename);
+        destroy(filename);
+        break;
+    case 4:
+        printf("请输入要打开的文件名：");
+        scanf("%s",filename);
+        ReadFile(filename);
+        break;
+    case 5:
+        int choice3;
+        printf("1. 增加内容\t2. 删除内容");
+        printf("\n请选择：");
+        scanf("%d",&choice3);
+        printf("请输入要修改的文件名:");
+        scanf("%s",filename);
+        if(choice3==1)
+            ChangeFileAdd(filename);
+        else if(choice3==2)
+            ChangeFileDel(filename);
+
+        break;
+    case 6:
+        ShowBitMap();
+        break;
+    case 7:
+        printf("请输入要保存的文件名：");
+        scanf("%s",filename);
+        save(filename);
+        break;
+    case 8:
+        flag=1;
+        break;
+    default:
+        break;
+}
+```
+
+$\qquad$这个switch结构提供个8个选择，对应8个功能。
+
+## 五 文件系统测试
+
+$\qquad$IO系统、文件系统和菜单系统完成之后需要对文件系统进行测试，下面是测试的详细过程。
+
+### 5.1 测试概述
+
+$\qquad$测试部分分别测试IO系统、文件系统对应的功能，测试计划如下所示：
+
+|     测试名称     |                  测试描述                  |                    被测试模块                    |
+| :--------------: | :----------------------------------------: | :----------------------------------------------: |
+| 保存磁盘文件测试 |        将当前磁盘信息存入二进制文件        |        IO系统磁盘写入文件功能、菜单系统等        |
+| 读取磁盘文件测试 | 从文件系统中读取磁盘文件，装载到磁盘系统中 |        IO系统磁盘写入文件功能、菜单系统等        |
+|   目录查看测试   |        查看当前目录中存在的所有文件        | 文件系统目录模块、文件描述符模块；<br />菜单系统 |
+|   文件创建测试   |                创建新的文件                |        文件系统目录模块、文件系统用户接口        |
+|   文件删除测试   |            删除已有(不存在)文件            |        文件系统目录模块、文件系统用户接口        |
+|   打开文件测试   |             打开并查看文件内容             |                 文件系统用户接口                 |
+|   修改文件测试   |                修改文件内容                |    文件系统目录模块、文件系统用户接口，IO系统    |
+|   查看位图测试   |            查看当前磁盘位图信息            |             IO系统位图模块，菜单系统             |
+
+## 5.2 系统测试
+
+1. 保存磁盘文件测试 & 文件创建测试
+
++ 保存磁盘系统之前首先需要创建一个新的磁盘系统
+
+<div align="center"><img src="http://ipic-picgo.oss-cn-beijing.aliyuncs.com/2019-06-14-152201.jpg" width="400" ></div>
+
++ 在新的文件系统中创建文件
+
+<div align="center"><img src="http://ipic-picgo.oss-cn-beijing.aliyuncs.com/2019-06-14-152411.jpg" width="400" ></div>
+
+> 可以看到查看文件目录的时候看到刚刚创建的目录
+
++ 给刚刚创建的文件添加一点内容
+
+<div align="center"><img src="http://ipic-picgo.oss-cn-beijing.aliyuncs.com/2019-06-14-152553.jpg" width="400" ></div>
+
+> 可以看到添加了内容之后内容保存到文中去
+
++ 再次查看目录
+
+<div align="center"><img src="http://ipic-picgo.oss-cn-beijing.aliyuncs.com/2019-06-14-152726.jpg" width="400" ></div>
+
+可以看到文件的长度确实发生了变化
+
++ 保存磁盘文件
+
+<div align="center"><img src="http://ipic-picgo.oss-cn-beijing.aliyuncs.com/2019-06-14-152830.jpg" width="400" ></div>
+
+> 将磁盘系统保存到test.dat中去
+
++ 为了验证刚刚的磁盘信息确实保存了下来，使用xxd工具查看test.dat文件的内容
+
+<div align="center"><img src="http://ipic-picgo.oss-cn-beijing.aliyuncs.com/2019-06-14-153038.jpg" width="400" ></div>
+
+> 可以看到test.dat中前面是位图信息，共占用15个磁盘块，标志位'Y',其他所有磁盘块状态为空闲，标志位'N'
+
++ 再检索刚刚创建的文件是否存在
+
+<div align="center"><img src="http://ipic-picgo.oss-cn-beijing.aliyuncs.com/2019-06-14-153234.jpg" width="400" ></div>
+
+> 可以看到检索'Hello'和文件名'test'的时候都有对应内容，说明磁盘信息缺失保存了下来
+
+2. 读取磁盘文件测试 & 目录查看测试 & 打开文件测试
+
++ 打开上面测试中保存的`test.dat`文件
+
+<div align="center"><img src="http://ipic-picgo.oss-cn-beijing.aliyuncs.com/2019-06-14-153515.jpg" width="400" ></div>
+
+> 可以看到磁盘信息全部恢复了
+
++ 打开文件内容具体查看一下，内容是否存在变化
+
+<div align="center"><img src="http://ipic-picgo.oss-cn-beijing.aliyuncs.com/2019-06-14-153724.jpg" width="400" ></div>
+
+> 可以看到文件内容没有发生改变
+
+
+
+3. 文件删除测试
+
++ 为了便于进行文件删除测试，首先先创建一个文件`test2.txt`
+
+<div align="center"><img src="http://ipic-picgo.oss-cn-beijing.aliyuncs.com/2019-06-14-153946.jpg" width="400" ></div>
+
++ 删除文件`test2.txt`
+
+<div align="center"><img src="http://ipic-picgo.oss-cn-beijing.aliyuncs.com/2019-06-14-154041.jpg" width="400" ></div>
+
+4. 修改文件测试
+
+$\qquad$修改文件测时候分为在原有文件的基础上增加内容和删除内容，我们这在`test.txt`的基础上进行增加和删除操作
+
++ 在`test.txt`上增加内容
+
+<div align="center"><img src="http://ipic-picgo.oss-cn-beijing.aliyuncs.com/2019-06-14-154448.jpg" width="400" ></div>
+
+> 可以看到在指定位置增加了指定的内容
+
++ 在`test.txt`删除内容
+
+<div align="center"><img src="http://ipic-picgo.oss-cn-beijing.aliyuncs.com/2019-06-14-154628.jpg" width="400" ></div>
+
+> 可以看到指定位置的指定内容被删除了
+
+5. 查看位图测试
+
++ 文件系统在初始化之后应该有15个磁盘块被占用，其中2个用于存储位图，12个用于存储文件描述符，1个用于存储目录
+
+<div align="center"><img src="http://ipic-picgo.oss-cn-beijing.aliyuncs.com/2019-06-14-155003.jpg" width="400" ></div>
+
+<div align="center"><img src="http://ipic-picgo.oss-cn-beijing.aliyuncs.com/2019-06-14-155027.jpg" width="400" ></div>
+
+> 可以看到0号柱面的磁盘位图信息如上所示,总共使用14个磁盘块，其他全部空闲
+
++ 增加一个文件之后，查看磁盘位图
+
+$\qquad$增加文件之后，当文件内容小于一个磁盘块大小时，暂时只分配一个磁盘块，所以应该只占用前个磁盘块
+
+<div align="center"><img src="http://ipic-picgo.oss-cn-beijing.aliyuncs.com/2019-06-14-155232.jpg" width="400" ></div>
+
+<div align="center"><img src="http://ipic-picgo.oss-cn-beijing.aliyuncs.com/2019-06-14-155252.jpg" width="400" ></div>
+
+## 六 实验总结
+
+$\qquad$通过本次实验收获到了许多的东西，也许到了很多知识。实验之前，看完整个实验要求之后没有一个整体的思路就开始编写程序，导致后期的时候很多地方考虑不够全面，各个系统中函数组织混乱，整个构架不够完整，本次实验收获到的第一点就是在进行实验之前一定要提前设计好实验的思路，最好做好整个概要设计；第二点收获就是对文件系统有了更加深刻的认知，实验从最底层的磁盘块开始模拟，一点一点到IO系统，再到文件系、目录等等，通过自己的实践更加深刻的了解了文件系统；最后一点 收获就是在编程能力上的收获，这次通过编写这个文件系统，再次巩固了自己对于C语言的掌握能力，并且了解到了以前所用的处理字符串的一系列函数的缺点，例如strcpy只能复制\0之前的内容，strcat只能连接两个字符换的可见内容等等，学会了新的函数memcpy，通过这个函数实现将结构体以二进制的形式存储到字符串中和将字符串再恢复到结构体中。
